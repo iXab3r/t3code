@@ -5,8 +5,9 @@ import {
   sessionGrantsScope,
   type SessionGrantInput,
 } from "@t3tools/contracts";
-import { getSearchQueryVariants } from "@t3tools/shared/searchQueryVariants";
 import { Atom } from "effect/reactivity";
+
+import { searchKeyboardLayout } from "../keyboardLayout.ts";
 
 import type {
   EnvironmentConnectionPhase,
@@ -73,7 +74,7 @@ export function filterFilesystemBrowseEntries(
   entries: ReadonlyArray<FilesystemBrowseEntry>,
   query: string,
 ) {
-  const variants = getSearchQueryVariants(query).map((variant) => ({
+  const variants = searchKeyboardLayout.getQueryVariants(query).map((variant) => ({
     ...variant,
     text: variant.text.toLowerCase(),
   }));
