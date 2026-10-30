@@ -3,6 +3,7 @@ import { AuthFilesystemReadScope, AuthOrchestrationReadScope } from "@t3tools/co
 
 import {
   createBrowseNavigationCoordinator,
+  filterFilesystemBrowseEntries,
   getFilesystemBrowsePath,
   resolveFilesystemReadAccess,
 } from "./filesystem.ts";
@@ -78,6 +79,44 @@ describe("filesystem browse model", () => {
     });
     expect(getFilesystemBrowsePath("C:\\Users\\test", "MacIntel").isBrowsing).toBe(false);
     expect(getFilesystemBrowsePath("~/projects/", "", false).isBrowsing).toBe(false);
+  });
+
+  it("recovers wrong-layout prefixes after literal matches without changing exact-name navigation", () => {
+    const entries = ["model", "ьщвуд-extra", "model-extra", ".model", "ьщвуд"].map((name) => ({
+      name,
+      fullPath: `~/projects/${name}`,
+    }));
+
+    expect(filterFilesystemBrowseEntries(entries, "ьщвуд")).toEqual({
+      visibleEntries: [entries[1], entries[4], entries[0], entries[2]],
+      exactEntry: entries[4],
+    });
+    expect(filterFilesystemBrowseEntries([entries[0]!], "ьщвуд")).toEqual({
+      visibleEntries: [entries[0]],
+      exactEntry: null,
+    });
+    expect(filterFilesystemBrowseEntries(entries, ".ьщвуд")).toEqual({
+      visibleEntries: [entries[3]],
+      exactEntry: null,
+    });
+  });
+
+  it.each([
+    ["", ["model-extra", "model", "t3code", "Документы"], null],
+    ["mo", ["model-extra", "model"], null],
+    ["MODEL", ["model-extra", "model"], null],
+    ["model", ["model-extra", "model"], "model"],
+    ["док", ["Документы"], null],
+    ["mщdel", [], null],
+    ["tcd", [], null],
+  ] as const)("preserves existing prefix and literal matching for %s", (query, names, exact) => {
+    const entries = ["model-extra", "model", ".model", "t3code", "Документы"].map((name) => ({
+      name,
+      fullPath: `~/projects/${name}`,
+    }));
+    const result = filterFilesystemBrowseEntries(entries, query);
+    expect(result.visibleEntries.map((entry) => entry.name)).toEqual(names);
+    expect(result.exactEntry?.name ?? null).toBe(exact);
   });
 });
 

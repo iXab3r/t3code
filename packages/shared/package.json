@@ -207,6 +207,10 @@
       "types": "./src/oauthScope.ts",
       "import": "./src/oauthScope.ts"
     },
+    "./searchQueryVariants": {
+      "types": "./src/searchQueryVariants.ts",
+      "import": "./src/searchQueryVariants.ts"
+    },
     "./searchRanking": {
       "types": "./src/searchRanking.ts",
       "import": "./src/searchRanking.ts"
