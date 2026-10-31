@@ -6,7 +6,9 @@ import jetbrains.buildServer.configs.kotlin.vcs.GitVcsRoot
 
 version = "2025.07"
 
-val nodeImage = "node:26.12.1-bookworm@sha256:3b764117159bda01d2396391e7789b6a9106af9729cfd001ef55e98557868310"
+object Toolchain {
+    const val NODE_IMAGE = "node:26.12.1-bookworm@sha256:3b764117159bda01d2396391e7789b6a9106af9729cfd001ef55e98557868310"
+}
 
 project {
     vcsRoot(PersonalGit)
@@ -33,7 +35,7 @@ object Prepare : BuildType({
         script {
             name = "Build shared bundle and WSL runtime"
             scriptContent = "bash scripts/personal-release/prepare.sh %build.counter%"
-            param("plugin.docker.imageId", nodeImage)
+            param("plugin.docker.imageId", Toolchain.NODE_IMAGE)
             param("plugin.docker.imagePlatform", "linux")
             param("plugin.docker.run.parameters", "--user 0 --init --platform linux/amd64 --volume t3-personal-vite:/root/.vite-plus --volume t3-personal-cargo:/root/.cargo --volume t3-personal-rustup:/root/.rustup")
         }
@@ -86,7 +88,7 @@ object Release : BuildType({
         script {
             name = "Validate complete release assets"
             scriptContent = "node scripts/personal-release/run.mjs stage-release"
-            param("plugin.docker.imageId", nodeImage)
+            param("plugin.docker.imageId", Toolchain.NODE_IMAGE)
             param("plugin.docker.imagePlatform", "linux")
             param("plugin.docker.run.parameters", "--user 0 --init")
         }
