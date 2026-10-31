@@ -34,7 +34,15 @@ object Prepare : BuildType({
     steps {
         script {
             name = "Build shared bundle and WSL runtime"
-            scriptContent = "bash scripts/personal-release/prepare.sh %build.counter%"
+            scriptContent = """
+                #!/usr/bin/env bash
+                mkdir -p release
+                set +e
+                bash scripts/personal-release/prepare.sh %build.counter% 2>&1 | tee release/prepare.log
+                result=${'$'}{PIPESTATUS[0]}
+                echo "##teamcity[publishArtifacts 'release/prepare.log => diagnostics']"
+                exit "${'$'}result"
+            """.trimIndent()
             param("plugin.docker.imageId", Toolchain.NODE_IMAGE)
             param("plugin.docker.imagePlatform", "linux")
             param("plugin.docker.run.parameters", "--user 0 --init --platform linux/amd64 --volume t3-personal-vite:/root/.vite-plus --volume t3-personal-cargo:/root/.cargo --volume t3-personal-rustup:/root/.rustup")
@@ -80,6 +88,7 @@ object Windows : BuildType({
 object Release : BuildType({
     id("Release")
     name = "Release / validate and stage assets"
+    params { param("env.T3_PUBLISH", "off") }
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
         checkoutMode = CheckoutMode.ON_AGENT
@@ -87,7 +96,7 @@ object Release : BuildType({
     steps {
         script {
             name = "Validate complete release assets"
-            scriptContent = "node scripts/personal-release/run.mjs stage-release"
+            scriptContent = "#!/usr/bin/env bash\nset -euo pipefail\nnode scripts/personal-release/run.mjs stage-release\nbash scripts/personal-release/publish.sh"
             param("plugin.docker.imageId", Toolchain.NODE_IMAGE)
             param("plugin.docker.imagePlatform", "linux")
             param("plugin.docker.run.parameters", "--user 0 --init")

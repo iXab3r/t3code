@@ -186,6 +186,15 @@ if (phase === "prepare") {
   );
   const profile = NodePath.join(output, "smoke-profile");
   await NodeFSP.mkdir(profile);
+  const feed = await NodeFSP.readFile(
+    NodePath.join(NodePath.dirname(executable), "resources", "app-update.yml"),
+    "utf8",
+  );
+  if (!/^owner:\s*iXab3r\s*$/m.test(feed) || !/^repo:\s*t3code\s*$/m.test(feed)) {
+    throw new Error("Packaged updater points outside the personal fork.");
+  }
+  await NodeFSP.mkdir(NodePath.join(output, "launch-check"));
+  await NodeFSP.writeFile(NodePath.join(output, "launch-check", "app-update.yml"), feed);
   try {
     node(
       [
