@@ -43,7 +43,7 @@ try {
   });
   const result = await application.evaluate(
     async ({ app }, input) => {
-      const { createRequire } = await import("node:module");
+      const { createRequire } = process.getBuiltinModule("node:module");
       const { NsisUpdater } = createRequire(input.desktopManifest)("electron-updater");
       const updater = new NsisUpdater();
       updater.logger = null;

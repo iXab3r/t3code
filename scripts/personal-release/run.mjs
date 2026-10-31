@@ -241,6 +241,12 @@ if (phase === "prepare") {
     NodePath.join(input, "prepare", runtime),
     NodePath.join(output, "windows", runtime),
   );
+  const builderDebug = NodePath.join(output, "windows", "builder-debug.yml");
+  if ((await NodeFSP.readdir(NodePath.join(output, "windows"))).includes("builder-debug.yml")) {
+    await NodeFSP.cp(builderDebug, NodePath.join(output, "launch-check", "builder-debug.yml"));
+    await NodeFSP.rm(builderDebug);
+  }
+  message("publishArtifacts", "ci-out/launch-check/** => launch-check");
   await writeManifest(NodePath.join(output, "windows"), { version, revision, repository });
   message("buildNumber", version);
   message("publishArtifacts", "ci-out/windows/* => windows");

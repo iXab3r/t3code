@@ -20,7 +20,9 @@ repo=iXab3r/t3code
 version=$(node -p 'JSON.parse(require("fs").readFileSync("ci-out/release/manifest.json")).version')
 revision=$(node -p 'JSON.parse(require("fs").readFileSync("ci-out/release/manifest.json")).revision')
 tag="v$version"
-tag_revision=$(gh api "repos/$repo/git/ref/tags/$tag" --jq .object.sha 2>/dev/null || true)
+if ! tag_revision=$(gh api "repos/$repo/git/ref/tags/$tag" --jq .object.sha 2>/dev/null); then
+  tag_revision=''
+fi
 if [[ -n "$tag_revision" && "$tag_revision" != "$revision" ]]; then
   echo "Tag $tag already points at a different commit." >&2
   exit 1
