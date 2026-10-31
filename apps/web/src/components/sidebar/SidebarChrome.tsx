@@ -164,31 +164,41 @@ function HistoryNavigationButton({
 
 function SidebarBrand({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <Link
-      aria-label="T3 Code home"
+    <div
       className={cn(
-        "relative z-10 ml-[var(--workspace-titlebar-content-left)] hidden h-7 w-fit min-w-0 shrink-0 items-center overflow-hidden rounded-md outline-hidden ring-ring focus-visible:ring-2 focus-visible:ring-inset md:flex",
+        "relative z-10 ml-[var(--workspace-titlebar-content-left)] flex h-7 w-fit min-w-0 shrink-0 items-center",
         onBackdrop ? "text-white" : "text-foreground",
       )}
-      to="/"
     >
       <SidebarBrandMark onBackdrop={onBackdrop} />
-    </Link>
+    </div>
   );
 }
 
 function SidebarBrandMark({ onBackdrop }: { onBackdrop: boolean }) {
   return (
-    <span className="inline-flex min-w-0 items-baseline gap-1 text-sm font-medium tracking-tight">
-      <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
-      <span
-        className={cn(
-          "truncate [text-box:trim-both_cap_alphabetic] supports-[text-box:trim-both_cap_alphabetic]:py-1",
-          onBackdrop ? "text-white/70" : "text-muted-foreground",
-        )}
+    <span className="inline-flex min-w-0 flex-col items-start justify-center">
+      <Link
+        aria-label="T3 Code home"
+        className="inline-flex items-baseline gap-1 rounded-sm text-sm leading-4 font-medium tracking-tight outline-hidden ring-ring [-webkit-app-region:no-drag] focus-visible:ring-2 focus-visible:ring-inset"
+        to="/"
       >
-        Code
-      </span>
+        <T3Wordmark aria-label="T3" className="h-[1cap] w-auto shrink-0" />
+        <span className={onBackdrop ? "text-white/70" : "text-muted-foreground"}>Code</span>
+      </Link>
+      <a
+        className={cn(
+          "whitespace-nowrap rounded-sm text-3xs leading-3 outline-hidden ring-ring [-webkit-app-region:no-drag] hover:underline focus-visible:ring-2 focus-visible:ring-inset",
+          onBackdrop
+            ? "text-white/70 hover:text-white"
+            : "text-muted-foreground hover:text-foreground",
+        )}
+        href="https://github.com/iXab3r/t3code"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        personal edition by Xab3r
+      </a>
     </span>
   );
 }

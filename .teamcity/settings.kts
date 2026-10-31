@@ -11,6 +11,10 @@ object Toolchain {
 }
 
 project {
+    description = "Personal Edition by Xab3r: https://github.com/iXab3r/t3code. " +
+        "Releases build personal only. main tracks upstream; PRs into main are only for upstream contributions. " +
+        "All personal changes target personal. Periodically merge main into personal; never personal into main. " +
+        "Workflow: https://github.com/iXab3r/t3code/blob/personal/docs/operations/personal-fork.md"
     vcsRoot(PersonalGit)
     buildType(Prepare)
     buildType(Windows)
@@ -114,6 +118,6 @@ object Release : BuildType({
             cleanDestination = true
         }
     }
-    triggers { vcs { quietPeriodMode = VcsTrigger.QuietPeriodMode.USE_CUSTOM; quietPeriod = 60 } }
+    triggers { vcs { branchFilter = "+:<default>"; quietPeriodMode = VcsTrigger.QuietPeriodMode.USE_CUSTOM; quietPeriod = 60 } }
     failureConditions { executionTimeoutMin = 15 }
 })

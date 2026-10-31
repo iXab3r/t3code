@@ -1,5 +1,14 @@
 # T3 Code
 
+## Personal fork workflow
+
+This checkout belongs to `iXab3r/t3code`. Read [the fork workflow](docs/operations/personal-fork.md) before choosing a base or PR target.
+
+- `main` tracks upstream and contains only upstream changes or focused changes intended for upstream PRs. Never put personal branding, release infrastructure, or other private customizations on `main`.
+- Base personal work on `origin/personal` and target `personal`, including personal UI and TeamCity changes. Never merge `personal` into `main`.
+- PRs targeting our `main` are only for upstream contributions. Keep their branches free of personal commits and check the diff against `upstream/main` before opening an upstream PR.
+- Periodically merge updated `main` into `personal` to retain personal changes while following upstream.
+
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.
 
 You can think of T3 Code as an open source "bring-your-own-subscription" alternative to apps like Claude Desktop, Codex App, Cursor Glass and Conductor.
