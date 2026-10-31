@@ -1,6 +1,7 @@
 /* oxlint-disable t3code/no-global-process-runtime -- CI bootstrap runs before workspace dependencies are installed. */
 import * as NodeChildProcess from "node:child_process";
 import * as NodeFSP from "node:fs/promises";
+import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
 import * as NodeURL from "node:url";
 import * as NodeUtil from "node:util";
@@ -151,8 +152,8 @@ if (phase === "prepare") {
   install();
   node(["scripts/update-release-package-versions.ts", version]);
   run(tar, ["-xzf", NodePath.join(input, "prepare", "js-bundle.tar.gz"), "-C", root]);
-  const temp = NodePath.join(output, "temp");
-  await NodeFSP.mkdir(temp);
+  const tempParent = NodePath.resolve(NodeOS.tmpdir());
+  const temp = await NodeFSP.mkdtemp(NodePath.join(tempParent, "t3-personal-package-"));
   process.env.TEMP = temp;
   process.env.TMP = temp;
   node([
@@ -243,6 +244,11 @@ if (phase === "prepare") {
   await writeManifest(NodePath.join(output, "windows"), { version, revision, repository });
   message("buildNumber", version);
   message("publishArtifacts", "ci-out/windows/* => windows");
+  if (
+    NodePath.dirname(temp) !== tempParent ||
+    !NodePath.basename(temp).startsWith("t3-personal-package-")
+  )
+    throw new Error("Unexpected packaging temporary directory.");
   await NodeFSP.rm(temp, { recursive: true, force: true });
 } else if (phase === "stage-release") {
   const directory = NodePath.join(input, "windows");

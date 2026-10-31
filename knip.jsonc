@@ -31,6 +31,7 @@
         "mobile-behavior/run.ts",
         "mobile-native-client.ts",
         "personal-release/run.mjs",
+        "personal-release/check-updater.mjs",
         "setup-worktree.ts",
         "sign-macos.ts",
         "smoke-desktop-app.ts",

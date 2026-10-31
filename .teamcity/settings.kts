@@ -87,8 +87,8 @@ object Windows : BuildType({
 
 object Release : BuildType({
     id("Release")
-    name = "Release / validate and stage assets"
-    params { param("env.T3_PUBLISH", "off") }
+    name = "Release / validate and publish"
+    params { param("env.T3_PUBLISH", "release") }
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
         checkoutMode = CheckoutMode.ON_AGENT
