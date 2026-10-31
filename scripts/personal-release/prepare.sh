@@ -9,6 +9,8 @@ export RUSTUP_TOOLCHAIN=1.96.1
 export PATH="$VP_HOME/bin:$CARGO_HOME/bin:$PATH"
 export CI=true
 
+node scripts/personal-release/run.mjs check-github
+
 apt-get update
 apt-get install -y --no-install-recommends libsecret-1-dev pkg-config patchelf libatomic1
 if ! command -v rustup >/dev/null; then

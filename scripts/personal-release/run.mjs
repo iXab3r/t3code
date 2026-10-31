@@ -76,7 +76,18 @@ function install() {
 }
 
 const phase = process.argv[2];
-if (phase === "prepare") {
+if (phase === "check-github") {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (!token) throw new Error("Missing GitHub publication credential.");
+  const response = await fetch(`https://api.github.com/repos/${repository}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok) throw new Error(`GitHub credential preflight failed: HTTP ${response.status}.`);
+  const info = await response.json();
+  if (!info.permissions?.push)
+    throw new Error("GitHub account has no push access to the personal repository.");
+  console.log(`GitHub credential preflight passed for ${repository}.`);
+} else if (phase === "prepare") {
   if (process.platform !== "linux" || process.arch !== "x64")
     throw new Error("Prepare requires Linux x64 (use an amd64 container on Mac).");
   const counter = process.argv[3];
@@ -279,5 +290,5 @@ if (phase === "prepare") {
     `Validated v${manifest.version} at ${revision}. Release assets are staged; GitHub publication is not enabled.`,
   );
 } else {
-  throw new Error("Usage: run.mjs <prepare counter|windows|stage-release>");
+  throw new Error("Usage: run.mjs <check-github|prepare counter|windows|stage-release>");
 }
