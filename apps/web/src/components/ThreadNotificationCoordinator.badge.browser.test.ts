@@ -1,12 +1,14 @@
 import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import type { AnyRouter } from "@tanstack/react-router";
-import { EnvironmentId } from "@t3tools/contracts";
+import { scopedThreadKey } from "@t3tools/client-runtime/environment";
+import { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
 import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { expect, it, vi } from "vite-plus/test";
 
 import { fakeTimers, stubGlobal } from "../../test/render";
+import { useUiStateStore } from "../uiStateStore";
 
 const state = vi.hoisted(() => ({
   mode: "notifications",
@@ -107,6 +109,11 @@ const thread = {
   archivedAt: null as string | null,
   hasPendingApprovals: false,
   hasPendingUserInput: false,
+  lastVisitedAt: "2026-09-13T06:59:00.000Z" as string | null | undefined,
+  settledOverride: null as "settled" | null,
+  snoozedUntil: null as string | null,
+  deletedAt: null as string | null,
+  parentThreadId: null as string | null,
   session: null as { status: string } | null,
   latestTurn: { turnId: "turn", state: "running", completedAt: null as string | null },
 };
@@ -130,8 +137,8 @@ function toV2ThreadShell(input: typeof thread) {
     activeProviderThreadId: null,
     lineage: {
       rootThreadId: input.id,
-      parentThreadId: null,
-      relationshipToParent: null,
+      parentThreadId: input.parentThreadId,
+      relationshipToParent: input.parentThreadId ? "subagent" : null,
     },
     forkedFrom: null,
     createdBy: "user",
@@ -162,10 +169,12 @@ function toV2ThreadShell(input: typeof thread) {
       ? DateTime.makeUnsafe(latestTurn.completedAt)
       : undefined,
     archivedAt: input.archivedAt ? DateTime.makeUnsafe(input.archivedAt) : null,
-    settledOverride: null,
+    settledOverride: input.settledOverride,
     settledAt: null,
-    lastVisitedAt: null,
-    deletedAt: null,
+    snoozedUntil: input.snoozedUntil ? DateTime.makeUnsafe(input.snoozedUntil) : null,
+    lastVisitedAt:
+      input.lastVisitedAt == null ? input.lastVisitedAt : DateTime.makeUnsafe(input.lastVisitedAt),
+    deletedAt: input.deletedAt ? DateTime.makeUnsafe(input.deletedAt) : null,
   };
 }
 
@@ -184,6 +193,8 @@ function shell(overrides: Partial<typeof thread> = {}, ...others: Partial<typeof
 function setup() {
   vi.clearAllMocks();
   const stack = new AsyncDisposableStack();
+  const priorVisits = useUiStateStore.getState().threadLastVisitedAtById;
+  stack.defer(() => useUiStateStore.setState({ threadLastVisitedAtById: priorVisits }));
   registry = AtomRegistry.make();
   const testRegistry = registry;
   stack.defer(() => testRegistry.dispose());
@@ -328,5 +339,137 @@ it.each([false, true])(
     expect(TestNotification.sent.map(({ title }) => title)).toEqual(
       continued ? [] : ["Thread completed"],
     );
+  },
+);
+
+it("keeps unread completions across focus and acknowledges each thread separately", async () => {
+  await using app = setup();
+  const completed = {
+    latestTurn: {
+      turnId: "finished",
+      state: "completed",
+      completedAt: "2026-09-13T07:00:01.000Z",
+    },
+  };
+  state.shells.set("one", shell(completed, { ...completed, id: "other" }));
+  state.shells.set("two", shell(completed));
+  TestNotification.permission = "denied";
+  app.start();
+  expect(state.badge).toHaveBeenLastCalledWith(3);
+  focused = true;
+  window.dispatchEvent(new Event("focus"));
+  expect(state.badge).toHaveBeenLastCalledWith(3);
+  state.shells.set("one", {
+    ...shell(completed, { ...completed, id: "other" }),
+    status: "cached",
+  });
+  expect(state.badge).toHaveBeenLastCalledWith(3);
+  state.shells.set(
+    "one",
+    shell(
+      { ...completed, lastVisitedAt: "2026-09-13T07:00:01.000Z" },
+      { ...completed, id: "other" },
+    ),
+  );
+  expect(state.badge).toHaveBeenLastCalledWith(2);
+  state.mode = "off";
+  app.changeSettings();
+  expect(state.badge).toHaveBeenLastCalledWith(2);
+  app.setEnvironmentIds(["one"]);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  state.shells.set("one", shell({ ...completed, lastVisitedAt: completed.latestTurn.completedAt }));
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+});
+
+it.each([
+  { archivedAt: "2026-09-13T07:00:02.000Z" },
+  { settledOverride: "settled" as const },
+  { snoozedUntil: "2099-01-01T00:00:00.000Z" },
+  { deletedAt: "2026-09-13T07:00:02.000Z" },
+  { parentThreadId: "parent" },
+  { hasPendingUserInput: true },
+  { latestTurn: { turnId: "new-run", state: "running", completedAt: null } },
+  {
+    latestTurn: {
+      turnId: "failed-run",
+      state: "error",
+      completedAt: "2026-09-13T07:00:02.000Z",
+    },
+  },
+])("removes a completion when its thread leaves unread ready state: %j", async (change) => {
+  await using app = setup();
+  state.mode = "off";
+  const completed = {
+    latestTurn: {
+      turnId: "finished",
+      state: "completed",
+      completedAt: "2026-09-13T07:00:01.000Z",
+    },
+  };
+  state.shells.set("one", shell(completed));
+  app.start();
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  state.shells.set("one", shell({ ...completed, ...change }));
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+  state.shells.set("one", shell(completed));
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+});
+
+it("deduplicates completion notifications and retains only unread work after focus", async () => {
+  await using app = setup();
+  app.start();
+  using _timers = fakeTimers();
+  const completed = {
+    latestTurn: {
+      turnId: "finished",
+      state: "completed",
+      completedAt: "2026-09-13T07:00:01.000Z",
+    },
+  };
+  state.shells.set("one", shell(completed));
+  await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
+  expect(TestNotification.sent.map((sent) => sent.title)).toEqual(["Thread completed"]);
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  state.shells.set("one", shell({ ...completed, lastVisitedAt: completed.latestTurn.completedAt }));
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+  expect(TestNotification.sent[0]!.close).toHaveBeenCalled();
+  state.shells.set("one", shell(completed));
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  state.shells.set("two", shell({ hasPendingUserInput: true }));
+  expect(state.badge).toHaveBeenLastCalledWith(2);
+  focused = true;
+  window.dispatchEvent(new Event("focus"));
+  expect(state.badge).toHaveBeenLastCalledWith(1);
+  expect(TestNotification.sent.every((sent) => sent.close.mock.calls.length > 0)).toBe(true);
+  state.shells.set("one", shell({ ...completed, lastVisitedAt: completed.latestTurn.completedAt }));
+  expect(state.badge).toHaveBeenLastCalledWith(0);
+});
+
+it.each([null, undefined])(
+  "counts unopened completions with lastVisitedAt %s",
+  async (lastVisitedAt) => {
+    await using app = setup();
+    state.mode = "off";
+    state.shells.set(
+      "one",
+      shell({
+        lastVisitedAt,
+        latestTurn: {
+          turnId: "finished",
+          state: "completed",
+          completedAt: "2026-09-13T07:00:01.000Z",
+        },
+      }),
+    );
+    app.start();
+    expect(state.badge).toHaveBeenLastCalledWith(1);
+    if (lastVisitedAt === undefined) {
+      const key = scopedThreadKey({
+        environmentId: EnvironmentId.make("one"),
+        threadId: ThreadId.make("thread"),
+      });
+      useUiStateStore.getState().markThreadVisited(key, "2026-09-13T07:00:01.000Z");
+      expect(state.badge).toHaveBeenLastCalledWith(0);
+    }
   },
 );
