@@ -4,7 +4,7 @@ import jetbrains.buildServer.configs.kotlin.triggers.VcsTrigger
 import jetbrains.buildServer.configs.kotlin.triggers.vcs
 import jetbrains.buildServer.configs.kotlin.vcs.GitVcsRoot
 
-version = "2026.1"
+version = "2025.07"
 
 val nodeImage = "node:26.12.1-bookworm@sha256:3b764117159bda01d2396391e7789b6a9106af9729cfd001ef55e98557868310"
 
@@ -16,14 +16,14 @@ project {
 }
 
 object PersonalGit : GitVcsRoot({
-    id("T3Personal_Git")
+    id("Git")
     name = "T3 personal integration"
     url = "https://github.com/iXab3r/t3code.git"
     branch = "refs/heads/personal"
 })
 
 object Prepare : BuildType({
-    id("T3Personal_Prepare")
+    id("Prepare")
     name = "Prepare / Linux x64 runtime"
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
@@ -43,7 +43,7 @@ object Prepare : BuildType({
 })
 
 object Windows : BuildType({
-    id("T3Personal_Windows")
+    id("Windows")
     name = "Windows x64 / installer and launch check"
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
@@ -76,7 +76,7 @@ object Windows : BuildType({
 })
 
 object Release : BuildType({
-    id("T3Personal_Release")
+    id("Release")
     name = "Release / validate and stage assets"
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
