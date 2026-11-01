@@ -12,7 +12,9 @@ export CI=true
 node scripts/personal-release/run.mjs check-github
 
 apt-get update
-apt-get install -y --no-install-recommends libsecret-1-dev pkg-config patchelf libatomic1
+apt-get install -y --no-install-recommends libsecret-1-dev pkg-config patchelf libatomic1 \
+  imagemagick libwayland-dev libxkbcommon-dev libgtk-3-0 libnss3 libasound2 libxss1 \
+  libgbm1 libatk-bridge2.0-0 libdrm2 xvfb xauth dbus-x11
 if ! command -v rustup >/dev/null; then
   curl --location --fail --silent --show-error https://sh.rustup.rs -o /tmp/t3-rustup.sh
   sh /tmp/t3-rustup.sh -y --profile minimal --default-toolchain "$RUSTUP_TOOLCHAIN" --no-modify-path

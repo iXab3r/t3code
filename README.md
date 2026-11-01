@@ -17,8 +17,9 @@ Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, and fx providers.
   with a link to this repository.
 - **A separate release and update feed.** Personal desktop and standalone CLI
   builds update from this repository's nightly releases.
-- **Matching Windows and WSL builds.** TeamCity packages the Windows desktop
-  together with a Linux x64 WSL runtime built from the same source revision.
+- **Matching Windows and Linux builds.** TeamCity packages the Windows installer,
+  Linux AppImage, and Windows/Linux CLI archives from the same source revision.
+  The Windows desktop includes the matching Linux x64 WSL runtime.
 
 This list describes shipped differences. Keep it current when a fork feature is
 added, changed, or removed; see the [fork workflow](docs/operations/personal-fork.md).
@@ -32,11 +33,11 @@ marked as prereleases, so use the releases list to find the newest one.
 For fx, install [fx](https://fx.sh), run `fx login` on the server's machine, and
 follow the [fx setup guide](docs/user/providers-fx.md).
 
-| Platform                            | Personal build                                                                                     |
-| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
-| Windows x64                         | `T3-Code-<version>-x64.exe` desktop installer, or `t3-<version>-win32-x64.zip` standalone CLI      |
-| Linux x64, including Nobara and WSL | `t3-<version>-linux-x64.tar.gz` standalone CLI/runtime                                             |
-| macOS                               | Personal packages are not published yet; packaging will be added when the Mac build agent is ready |
+| Platform                            | Personal build                                                                                          |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Windows x64                         | `T3-Code-<version>-x64.exe` desktop installer, or `t3-<version>-win32-x64.zip` standalone CLI           |
+| Linux x64, including Nobara and WSL | `T3-Code-<version>-x64.AppImage` desktop app, or `t3-<version>-linux-x64.tar.gz` standalone CLI/runtime |
+| macOS                               | Personal packages are not published yet; packaging will be added when the Mac build agent is ready      |
 
 ### Windows desktop
 
@@ -51,6 +52,19 @@ To connect another device, open **Settings → Sharing & access** on the host an
 follow the [remote access guide](docs/user/remote-access.md). Keep the host running.
 The official upstream mobile app can connect to this server; this fork does not
 currently publish its own mobile clients.
+
+### Linux desktop
+
+Download the `.AppImage` from the same personal release. Put it in its own folder,
+open a terminal there, and run:
+
+```sh
+chmod +x ./T3-Code-*.AppImage
+./T3-Code-*.AppImage
+```
+
+Authenticate a provider on that machine, open a project, and create a thread as
+on Windows. The `.tar.gz` asset is the standalone CLI/WSL runtime, not the desktop app.
 
 ### Standalone CLI on Windows or Linux
 
@@ -86,8 +100,8 @@ use the release assets above or build this repository from source.
 ## Updating
 
 The personal desktop app uses its built-in updater to download this fork's
-nightly releases. Follow the update prompt, or install a newer personal `.exe`
-manually from the releases page.
+nightly releases. Follow the update prompt, or download a newer personal `.exe`
+or `.AppImage` manually from the releases page.
 
 For the standalone CLI, run from its extracted folder:
 

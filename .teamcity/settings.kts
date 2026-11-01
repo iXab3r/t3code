@@ -31,14 +31,14 @@ object PersonalGit : GitVcsRoot({
 
 object Prepare : BuildType({
     id("Prepare")
-    name = "Prepare / Linux x64 runtime"
+    name = "Prepare / Linux x64 desktop and runtime"
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
         checkoutMode = CheckoutMode.ON_AGENT
     }
     steps {
         script {
-            name = "Build shared bundle and WSL runtime"
+            name = "Build shared bundle, Linux desktop and WSL runtime"
             scriptContent = """
                 #!/usr/bin/env bash
                 mkdir -p release
@@ -116,6 +116,11 @@ object Release : BuildType({
         artifacts(Windows) {
             buildRule = sameChainOrLastFinished()
             artifactRules = "windows/** => ci-input/windows"
+            cleanDestination = true
+        }
+        artifacts(Prepare) {
+            buildRule = sameChainOrLastFinished()
+            artifactRules = "linux/** => ci-input/linux"
             cleanDestination = true
         }
     }

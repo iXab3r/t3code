@@ -42,11 +42,14 @@ git merge origin/upstream
 `T3Personal_Git`, whose default branch is `refs/heads/main`. The release trigger
 is restricted to that default branch. `upstream` does not publish releases.
 
-The chain prepares the shared bundle and Linux x64 WSL runtime, packages and
-checks Windows x64 in an interactive user session, then validates and publishes
+The chain prepares the shared bundle, Linux x64 AppImage and WSL runtime, packages
+and checks Windows x64 in an interactive user session, then validates and publishes
 the matching assets to [our GitHub releases](https://github.com/iXab3r/t3code/releases).
 The desktop updater uses that repository's nightly feed. macOS packaging will be
-added when the macOS agent is ready; the Linux archive is a CLI/WSL runtime.
+added when the macOS agent is ready. The AppImage is the Linux desktop; the
+Linux `.tar.gz` archive is a CLI/WSL runtime. Linux launch checks extract the
+AppImage and open a seeded thread under Xvfb before publishing. Release staging
+requires both platform manifests to match the source revision and release version.
 
 Versioned TeamCity settings synchronize from `.teamcity` on `main`. Builds use
 current TeamCity settings (`alwaysUseCurrent`) so inherited authorization is not

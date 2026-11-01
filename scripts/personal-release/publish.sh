@@ -35,7 +35,7 @@ if [[ "$existing" == false ]]; then
 fi
 if [[ "$existing" != true ]]; then
   gh release create "$tag" --repo "$repo" --target "$revision" --draft --prerelease \
-    --title "T3 Personal $version" --notes "Personal T3 Code build from $revision. Windows x64 with matching WSL runtime."
+    --title "T3 Personal $version" --notes "Personal T3 Code build from $revision. Windows x64 installer, Linux x64 AppImage, and matching Windows/Linux CLI runtimes."
 fi
 mapfile -t assets < <(find ci-out/release -maxdepth 1 -type f -print | sort)
 gh release upload "$tag" --repo "$repo" --clobber -- "${assets[@]}"

@@ -21,7 +21,7 @@ export async function writeManifest(directory, identity) {
   );
 }
 
-export async function verifyManifest(directory, revision) {
+export async function verifyManifest(directory, revision, expectedVersion) {
   const manifest = JSON.parse(
     await NodeFSP.readFile(NodePath.join(directory, "manifest.json"), "utf8"),
   );
@@ -31,6 +31,8 @@ export async function verifyManifest(directory, revision) {
   if (!/^\d+\.\d+\.\d+-nightly\.\d{8}\.\d+$/.test(manifest.version)) {
     throw new Error("Expected a personal nightly release version.");
   }
+  if (expectedVersion !== undefined && manifest.version !== expectedVersion)
+    throw new Error("Release artifacts belong to a different release version.");
   if (!manifest.files || Object.keys(manifest.files).length === 0)
     throw new Error("Empty release manifest.");
   for (const [name, digest] of Object.entries(manifest.files)) {

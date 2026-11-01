@@ -147,6 +147,80 @@ if (phase === "check-github") {
     "--expect-version",
     version,
   ]);
+  const linux = NodePath.join(output, "linux");
+  const diagnostics = NodePath.join(output, "linux-launch-check");
+  const tempParent = NodePath.resolve(NodeOS.tmpdir());
+  const temp = await NodeFSP.mkdtemp(NodePath.join(tempParent, "t3-personal-linux-"));
+  if (
+    NodePath.dirname(temp) !== tempParent ||
+    !NodePath.basename(temp).startsWith("t3-personal-linux-")
+  )
+    throw new Error("Unexpected Linux packaging temporary directory.");
+  await NodeFSP.mkdir(diagnostics);
+  try {
+    node(
+      [
+        "scripts/build-desktop-artifact.ts",
+        "--platform",
+        "linux",
+        "--target",
+        "AppImage",
+        "--arch",
+        "x64",
+        "--build-version",
+        version,
+        "--skip-build",
+        "--output-dir",
+        linux,
+      ],
+      {
+        env: {
+          ...process.env,
+          TMPDIR: temp,
+          TEMP: temp,
+          TMP: temp,
+          APPIMAGE_EXTRACT_AND_RUN: "1",
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: "true",
+        },
+      },
+    );
+    const assets = await NodeFSP.readdir(linux);
+    const appImages = assets.filter((name) => name.endsWith(".AppImage"));
+    if (appImages.length !== 1) throw new Error("Expected exactly one Linux AppImage.");
+    const appImage = NodePath.join(linux, appImages[0]);
+    await NodeFSP.chmod(appImage, 0o755);
+    run(appImage, ["--appimage-extract"], { cwd: temp, stdio: ["ignore", "ignore", "inherit"] });
+    const extracted = NodePath.join(temp, "squashfs-root");
+    const feed = await NodeFSP.readFile(
+      NodePath.join(extracted, "resources", "app-update.yml"),
+      "utf8",
+    );
+    if (!/^owner:\s*iXab3r\s*$/m.test(feed) || !/^repo:\s*t3code\s*$/m.test(feed))
+      throw new Error("Linux updater points outside the personal fork.");
+    await NodeFSP.writeFile(NodePath.join(diagnostics, "app-update.yml"), feed);
+    run("dbus-run-session", [
+      "--",
+      "xvfb-run",
+      "-a",
+      process.execPath,
+      "scripts/smoke-desktop-app.ts",
+      "--executable",
+      NodePath.join(extracted, "t3code"),
+      "--artifacts-dir",
+      diagnostics,
+    ]);
+    if (assets.includes("builder-debug.yml")) {
+      await NodeFSP.rename(
+        NodePath.join(linux, "builder-debug.yml"),
+        NodePath.join(diagnostics, "builder-debug.yml"),
+      );
+    }
+    await writeManifest(linux, { version, revision, repository });
+    message("publishArtifacts", "ci-out/linux/* => linux");
+  } finally {
+    message("publishArtifacts", "ci-out/linux-launch-check/** => linux-launch-check");
+    await NodeFSP.rm(temp, { recursive: true, force: true });
+  }
   await writeManifest(output, { version, revision, repository });
   message("buildNumber", version);
   message("publishArtifacts", "ci-out/*.tar.gz => prepare");
@@ -270,24 +344,38 @@ if (phase === "check-github") {
 } else if (phase === "stage-release") {
   const directory = NodePath.join(input, "windows");
   const manifest = await verifyManifest(directory, revision);
-  const names = Object.keys(manifest.files);
+  const linuxDirectory = NodePath.join(input, "linux");
+  const linux = await verifyManifest(linuxDirectory, revision, manifest.version);
+  const linuxNames = Object.keys(linux.files);
+  if (!linuxNames.some((name) => name.endsWith(".AppImage")))
+    throw new Error("Missing Linux desktop AppImage.");
+  if (!linuxNames.some((name) => name.endsWith(".yml")))
+    throw new Error("Missing Linux desktop update metadata.");
+  if (linuxNames.some((name) => name in manifest.files))
+    throw new Error("Linux and Windows release assets have colliding names.");
+  const windowsNames = Object.keys(manifest.files);
+  const names = [...windowsNames, ...linuxNames];
   for (const extension of [".exe", ".blockmap", ".yml", "-linux-x64.tar.gz"]) {
-    if (!names.some((name) => name.endsWith(extension)))
+    if (!windowsNames.some((name) => name.endsWith(extension)))
       throw new Error(`Missing release asset: ${extension}`);
   }
   await resetOutput();
-  await NodeFSP.cp(directory, NodePath.join(output, "release"), { recursive: true });
+  const release = NodePath.join(output, "release");
+  await NodeFSP.cp(directory, release, { recursive: true });
+  for (const name of linuxNames)
+    await NodeFSP.copyFile(NodePath.join(linuxDirectory, name), NodePath.join(release, name));
+  await writeManifest(release, { version: manifest.version, revision, repository });
   await NodeFSP.writeFile(
     NodePath.join(output, "release", "SHA256SUMS"),
     names
       .sort()
-      .map((name) => `${manifest.files[name]}  ${name}\n`)
+      .map((name) => `${manifest.files[name] ?? linux.files[name]}  ${name}\n`)
       .join(""),
   );
   message("buildNumber", manifest.version);
   message("publishArtifacts", "ci-out/release/* => release");
   console.log(
-    `Validated v${manifest.version} at ${revision}. Release assets are staged; GitHub publication is not enabled.`,
+    `Validated Windows and Linux v${manifest.version} at ${revision}; release assets are staged.`,
   );
 } else {
   throw new Error("Usage: run.mjs <check-github|prepare counter|windows|stage-release>");
