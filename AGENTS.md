@@ -7,7 +7,7 @@ This checkout belongs to `iXab3r/t3code`. Read [the fork workflow](docs/operatio
 - `main` is this fork's integration, default, and release branch. Base personal work on `origin/main` and target our `main`, including branding and TeamCity changes.
 - `upstream` is a clean mirror of `pingdotgg/t3code:main`. Update it only from the `upstream/main` remote-tracking ref; never merge fork commits or contribution candidates into it.
 - Base upstream contribution branches on `origin/upstream` or `upstream/main`, never on our `main`. Review their diff against `upstream/main` before opening an upstream PR. A review PR in our repository may target `upstream`, but must not be merged there before the change lands upstream.
-- Periodically merge `origin/upstream` into our `main`, preserving personal changes. `personal` is a legacy branch, not a base or PR target for new work.
+- Periodically merge `origin/upstream` into our `main`, preserving personal changes.
 - Keep the README's **What this fork changes** list current when adding, changing, or removing user-visible fork features. Include installation or usage changes when they affect users; list shipped features, not plans or open PRs.
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.

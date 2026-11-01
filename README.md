@@ -108,8 +108,6 @@ and CLI/runtime archives in a release share the same version and source revision
 - **`upstream`** is a clean mirror of `pingdotgg/t3code:main`. Start upstream
   contribution branches here, keeping them free of personal patches.
 - Periodically merge `upstream` into our `main` to bring in upstream changes.
-- **`personal`** is a legacy branch retained for the migration; do not use it
-  for new work or PRs.
 
 See [the fork workflow](docs/operations/personal-fork.md) for synchronization and
 upstream contribution rules.

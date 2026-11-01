@@ -21,8 +21,6 @@ upstream T3 Code plus personal patches and publishes its own desktop updates.
 - Never merge our `main` into `upstream` or base an upstream contribution on our
   `main`. If a fix was discovered in the fork, cherry-pick only that focused change
   onto a clean upstream contribution branch.
-- `personal` is retained as a legacy migration pointer. It does not build releases
-  and is not a base or PR target for new work.
 
 Update the clean mirror, then periodically merge it into our `main`, resolving
 conflicts while preserving fork changes. Do not reset or force-push away fork work.
@@ -42,7 +40,7 @@ git merge origin/upstream
 
 [T3 Personal in TeamCity](https://build.eyeauras.net/project/T3Personal) uses
 `T3Personal_Git`, whose default branch is `refs/heads/main`. The release trigger
-is restricted to that default branch. `upstream` and legacy `personal` do not publish releases.
+is restricted to that default branch. `upstream` does not publish releases.
 
 The chain prepares the shared bundle and Linux x64 WSL runtime, packages and
 checks Windows x64 in an interactive user session, then validates and publishes
