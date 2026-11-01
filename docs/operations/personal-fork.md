@@ -61,8 +61,9 @@ checkout and architecture-specific Vite+, Cargo, and Rustup volumes. Its bootstr
 checks ARM64 execution first and registers the pinned `binfmt` emulator only when
 the host reports `exec format error`, including after a host reboot. That registration
 uses a privileged Docker helper; packaging itself uses a regular container.
-The ARM64 job disables Node's Wasm trap handler to avoid TypeScript parser failures
-under QEMU; V8 uses explicit bounds checks instead.
+The ARM64 job runs packaging scripts through the existing JavaScript TypeScript
+compiler, avoiding Node's unreliable Wasm TypeScript parser under QEMU. The loader
+is passed only to build scripts and is absent from packaged runtime launch checks.
 Both CLI and desktop launch checks execute in the target ARM64 environment.
 
 Versioned TeamCity settings synchronize from `.teamcity` on `main`. Builds use

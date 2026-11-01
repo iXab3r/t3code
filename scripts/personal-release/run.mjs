@@ -37,7 +37,11 @@ function capture(command, args) {
   if (result.error || result.status !== 0) throw result.error ?? new Error(result.stderr);
   return result.stdout.trim();
 }
-const node = (args, options) => run(process.execPath, args, options);
+const nodeArgs = (args) =>
+  process.platform === "linux" && process.arch === "arm64" && args[0]?.endsWith(".ts")
+    ? ["--import", new URL("./typescript-loader.mjs", import.meta.url).href, ...args]
+    : args;
+const node = (args, options) => run(process.execPath, nodeArgs(args), options);
 const vp = (args, options) => run(process.platform === "win32" ? "vp.exe" : "vp", args, options);
 const tar =
   process.platform === "win32"
@@ -172,11 +176,13 @@ async function buildLinux(version, arch) {
       "xvfb-run",
       "-a",
       process.execPath,
-      "scripts/smoke-desktop-app.ts",
-      "--executable",
-      NodePath.join(extracted, "t3code"),
-      "--artifacts-dir",
-      diagnostics,
+      ...nodeArgs([
+        "scripts/smoke-desktop-app.ts",
+        "--executable",
+        NodePath.join(extracted, "t3code"),
+        "--artifacts-dir",
+        diagnostics,
+      ]),
     ]);
     if (assets.includes("builder-debug.yml")) {
       await NodeFSP.rename(
