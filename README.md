@@ -7,7 +7,7 @@ independent distribution with its own releases and update feed.
 
 T3 Code runs agents on your machine and lets you control them from a desktop,
 web, or mobile client. It works with your subscriptions and authenticated
-Codex, Claude Code, Cursor, Grok Build, OpenCode, and Antigravity providers.
+Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, and fx providers.
 
 ## What this fork changes
 
@@ -28,6 +28,9 @@ added, changed, or removed; see the [fork workflow](docs/operations/personal-for
 Download the newest published nightly from
 [this fork's releases](https://github.com/iXab3r/t3code/releases). Releases are
 marked as prereleases, so use the releases list to find the newest one.
+
+For fx, install [fx](https://fx.sh), run `fx login` on the server's machine, and
+follow the [fx setup guide](docs/user/providers-fx.md).
 
 | Platform                            | Personal build                                                                                     |
 | ----------------------------------- | -------------------------------------------------------------------------------------------------- |
