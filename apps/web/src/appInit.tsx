@@ -1,4 +1,5 @@
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { searchKeyboardLayout } from "@t3tools/client-runtime/keyboardLayout";
 import type { ClientSettings } from "@t3tools/contracts/settings";
 import { createBrowserHistory, createHashHistory } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
@@ -177,6 +178,7 @@ export function startAppServices(): AppRouter {
   }
 
   installDesktopPasteAsText(window.desktopBridge, window);
+  window.addEventListener("keydown", searchKeyboardLayout.recordKey, true);
 
   startClientAppearance();
   startDocumentTitle();

@@ -123,6 +123,10 @@
       "types": "./src/platform/index.ts",
       "default": "./src/platform/index.ts"
     },
+    "./keyboardLayout": {
+      "types": "./src/keyboardLayout.ts",
+      "default": "./src/keyboardLayout.ts"
+    },
     "./providerSkills": {
       "types": "./src/providerSkills.ts",
       "default": "./src/providerSkills.ts"

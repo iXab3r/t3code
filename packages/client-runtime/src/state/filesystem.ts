@@ -7,6 +7,8 @@ import {
 } from "@t3tools/contracts";
 import { Atom } from "effect/reactivity";
 
+import { searchKeyboardLayout } from "../keyboardLayout.ts";
+
 import type {
   EnvironmentConnectionPhase,
   EnvironmentConnectionPresentation,
@@ -72,13 +74,21 @@ export function filterFilesystemBrowseEntries(
   entries: ReadonlyArray<FilesystemBrowseEntry>,
   query: string,
 ) {
-  const lowerQuery = query.toLowerCase();
+  const variants = searchKeyboardLayout.getQueryVariants(query).map((variant) => ({
+    ...variant,
+    text: variant.text.toLowerCase(),
+  }));
   const showHidden = query.startsWith(".");
-  const visibleEntries = entries.filter(
-    (entry) =>
-      entry.name.toLowerCase().startsWith(lowerQuery) &&
-      (showHidden || !entry.name.startsWith(".")),
-  );
+  const directEntries: FilesystemBrowseEntry[] = [];
+  const recoveredEntries: FilesystemBrowseEntry[] = [];
+  for (const entry of entries) {
+    if (!showHidden && entry.name.startsWith(".")) continue;
+    const lowerName = entry.name.toLowerCase();
+    const match = variants.find((variant) => lowerName.startsWith(variant.text));
+    if (match?.source === "original") directEntries.push(entry);
+    else if (match) recoveredEntries.push(entry);
+  }
+  const visibleEntries = directEntries.concat(recoveredEntries);
   const exactEntry =
     query.length > 0 ? (visibleEntries.find((entry) => entry.name === query) ?? null) : null;
 
