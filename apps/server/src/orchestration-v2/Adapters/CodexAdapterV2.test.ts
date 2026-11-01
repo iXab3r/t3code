@@ -58,6 +58,7 @@ import * as Cause from "effect/Cause";
 import * as PlatformError from "effect/PlatformError";
 import { TestClock } from "effect/testing";
 import { ChildProcess, ChildProcessSpawner } from "effect/process";
+import { HttpClient, HttpClientResponse } from "effect/http";
 
 import packageJson from "../../../package.json" with { type: "json" };
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -725,6 +726,114 @@ function withReplayRequestId(
     ? { ...entry, frame: { ...entry.frame, id } }
     : entry;
 }
+
+it.effect(
+  "CodexAdapterV2 enables suggestions on a live session and cancels sampling on disable",
+  () =>
+    Effect.gen(function* () {
+      const nativeThreadId = "suggestion-thread";
+      const nativeTurnId = "suggestion-turn";
+      const entries: Array<CodexReplay.CodexAppServerReplayEntry> = [
+        ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" }),
+        {
+          type: "emit_inbound",
+          frame: {
+            method: "turn/completed",
+            params: {
+              threadId: nativeThreadId,
+              turn: makeCodexReplayTurn({ id: nativeTurnId, status: "completed" }),
+            },
+          },
+        },
+      ];
+      const replay = yield* CodexReplay.makeReplayDriver(
+        makeCodexReplayTranscript({ scenario: "prompt-suggestions", entries }),
+      );
+      const native = yield* CodexClient.CodexAppServerClient.pipe(
+        Effect.provide(yield* Layer.build(CodexReplay.layerReplayWithDriver(replay))),
+      );
+      const sampled = yield* Deferred.make<void>();
+      const cancelled = yield* Deferred.make<void>();
+      const client = {
+        ...native,
+        raw: {
+          ...native.raw,
+          request: (method: string, params?: unknown) => {
+            if (method === "getAuthStatus")
+              return Effect.succeed({
+                authMethod: "chatgpt",
+                authToken: "account",
+                requiresOpenaiAuth: true,
+              });
+            if (method === "thread/resume")
+              return Effect.succeed({ model: "native-model", modelProvider: "openai" });
+            if (method === "thread/sample")
+              return Deferred.succeed(sampled, undefined).pipe(
+                Effect.andThen(Effect.never),
+                Effect.onInterrupt(() => Deferred.succeed(cancelled, undefined)),
+              );
+            return native.raw.request(method, params);
+          },
+        },
+      };
+      const http = HttpClient.make((request) =>
+        Effect.succeed(
+          HttpClientResponse.fromWeb(
+            request,
+            Response.json({
+              is_enabled: true,
+              prompt: "Native prompt",
+              prediction_reasoning_effort: "high",
+            }),
+          ),
+        ),
+      );
+      const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
+        instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
+        settings: DEFAULT_CODEX_SETTINGS,
+        environment: {},
+        clientFactory: { open: () => Effect.succeed(client) },
+        crypto: yield* Crypto.Crypto,
+        fileSystem: yield* FileSystem.FileSystem,
+        idAllocator: yield* IdAllocator.IdAllocatorV2,
+        serverConfig: yield* ProviderReplayHarness.makeReplayServerConfig(
+          "prompt-suggestions",
+        ).pipe(Effect.orDie),
+      }).pipe(Effect.provideService(HttpClient.HttpClient, http));
+      const threadId = ThreadId.make("thread-prompt-suggestions");
+      const runtime = yield* adapter.openSession({
+        threadId,
+        providerSessionId: ProviderSessionId.make("session-prompt-suggestions"),
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+      });
+      const providerThread = yield* runtime.ensureThread({
+        threadId,
+        modelSelection: CODEX_TEST_MODEL_SELECTION,
+        runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+      });
+      yield* runtime.setPromptSuggestionsEnabled!(true);
+      yield* runtime.startTurn(
+        makeCodexTestTurnInput({
+          threadId,
+          providerThread,
+          now: yield* DateTime.now,
+          attemptId: RunAttemptId.make("attempt-prompt-suggestions"),
+          text: "work",
+        }),
+      );
+      yield* Deferred.await(sampled);
+      yield* runtime.setPromptSuggestionsEnabled!(false);
+      yield* Deferred.await(cancelled);
+      assert.isNull((yield* Ref.get(replay.state)).failure);
+      assert.equal((yield* Ref.get(replay.state)).cursor, entries.length);
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+);
 
 describe("CodexAdapterV2 process exit", () => {
   it.effect.each([

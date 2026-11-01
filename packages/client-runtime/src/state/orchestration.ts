@@ -26,6 +26,13 @@ import * as ManagedRelayDpopSigner from "../relay/managedRelay.ts";
 import { EnvironmentRpcUnavailableError } from "../rpc/client.ts";
 import { fetchEnvironmentThreadTranscript } from "./threadTranscriptHttp.ts";
 
+export const dismissedPromptSuggestion = Atom.family((key: string) =>
+  Atom.make(false).pipe(
+    Atom.setIdleTTL("1 hour"),
+    Atom.withLabel(`prompt-suggestion:dismissed:${key}`),
+  ),
+);
+
 export function createOrchestrationEnvironmentAtoms<R, E>(
   runtime: Atom.AtomRuntime<EnvironmentRegistry | HttpClient.HttpClient | R, E>,
   options: {
@@ -65,6 +72,11 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
       }),
     }),
     v2: {
+      promptSuggestion: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+        label: "environment-data:orchestration-v2:prompt-suggestion",
+        tag: ORCHESTRATION_V2_WS_METHODS.subscribePromptSuggestion,
+        idleTtlMs: 0,
+      }),
       dispatchCommand: createEnvironmentRpcCommand(runtime, {
         label: "environment-data:orchestration-v2:dispatch-command",
         tag: ORCHESTRATION_V2_WS_METHODS.dispatchCommand,

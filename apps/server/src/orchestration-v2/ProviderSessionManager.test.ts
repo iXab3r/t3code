@@ -14,7 +14,8 @@ import {
   ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
-  type ProviderSessionId,
+  RunId,
+  ProviderSessionId,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Cause from "effect/Cause";
@@ -29,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Ref from "effect/Ref";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 import { TestClock } from "effect/testing";
 import { HttpServer } from "effect/http";
 
@@ -338,6 +340,10 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
     readonly backgroundTasksEndWithProcess?: boolean;
     readonly hangSessionScopeClose?: boolean;
     readonly startTurn?: Effect.Effect<void>;
+    readonly setPromptSuggestionsEnabled?: (
+      enabled: boolean,
+      sessionId: ProviderSessionId,
+    ) => Effect.Effect<void>;
     readonly interruptTurn?: Effect.Effect<void>;
     readonly beforeUnload?: Effect.Effect<void>;
     readonly spawnBeforeOpen?: boolean;
@@ -406,6 +412,12 @@ const makeProviderAdapter = Effect.fnUntraced(function* (
           driver: CODEX_DRIVER,
           providerSessionId: input.providerSessionId,
           providerSession: session,
+          ...(options.setPromptSuggestionsEnabled === undefined
+            ? {}
+            : {
+                setPromptSuggestionsEnabled: (enabled: boolean) =>
+                  options.setPromptSuggestionsEnabled!(enabled, input.providerSessionId),
+              }),
           events: options.failEventStream
             ? Stream.fail(
                 new ProviderAdapter.ProviderAdapterEventStreamError({
@@ -486,6 +498,10 @@ function layerTest(input: {
   readonly backgroundTasksEndWithProcess?: boolean;
   readonly hangSessionScopeClose?: boolean;
   readonly startTurn?: Effect.Effect<void>;
+  readonly setPromptSuggestionsEnabled?: (
+    enabled: boolean,
+    sessionId: ProviderSessionId,
+  ) => Effect.Effect<void>;
   readonly interruptTurn?: Effect.Effect<void>;
   readonly beforeUnload?: Effect.Effect<void>;
   readonly spawnBeforeOpen?: boolean;
@@ -506,6 +522,9 @@ function layerTest(input: {
   const layerRegistry = Layer.unwrap(
     makeProviderAdapter(input.state, {
       failEventStream: input.failEventStream ?? false,
+      ...(input.setPromptSuggestionsEnabled === undefined
+        ? {}
+        : { setPromptSuggestionsEnabled: input.setPromptSuggestionsEnabled }),
       ...(input.capabilities === undefined ? {} : { capabilities: input.capabilities }),
       ...(input.mcpConfigs === undefined ? {} : { mcpConfigs: input.mcpConfigs }),
       ...(input.beforeOpen === undefined ? {} : { beforeOpen: input.beforeOpen }),
@@ -1604,6 +1623,222 @@ it.effect("ProviderSessionManagerV2 interrupts event subscriptions on server shu
   }),
 );
 
+it.effect(
+  "ProviderSessionManagerV2 updates prompt suggestions without replacing a live session",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const delegate = yield* ServerSettings.ServerSettingsService.pipe(
+        Effect.provide(ServerSettings.layerTest()),
+      );
+      const settings = yield* SubscriptionRef.make({
+        ...(yield* delegate.getSettings),
+        providerInstances: {
+          [modelSelection.instanceId]: {
+            driver: CODEX_DRIVER,
+            config: { promptSuggestions: true },
+          },
+        },
+      });
+      const configured = yield* Queue.unbounded<boolean>();
+      yield* Effect.gen(function* () {
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        const threadId = ThreadId.make("thread-prompt-settings");
+        const providerSessionId = yield* idAllocator.allocate.providerSession({
+          providerInstanceId: modelSelection.instanceId,
+          threadId,
+        });
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+          ],
+        });
+        const input = { threadId, providerSessionId, modelSelection, runtimePolicy };
+        const runtime = yield* manager.open(input);
+        assert.deepEqual(yield* Queue.poll(configured), Option.some(true));
+        const attachedThreadId = ThreadId.make("thread-prompt-settings-attached");
+        yield* eventSink.write({
+          events: [
+            yield* makeThreadCreatedEvent({
+              idAllocator,
+              threadId: attachedThreadId,
+              now: yield* DateTime.now,
+            }),
+          ],
+        });
+        yield* manager.open({ ...input, threadId: attachedThreadId });
+        const adapterQueue = (yield* Ref.get(state)).eventQueues.get(String(providerSessionId))!;
+        yield* Queue.offer(adapterQueue, {
+          type: "prompt_suggestion.updated",
+          driver: CODEX_DRIVER,
+          threadId: attachedThreadId,
+          suggestion: {
+            instanceId: modelSelection.instanceId,
+            providerThreadId: idAllocator.derive.providerThread({
+              driver: CODEX_DRIVER,
+              nativeThreadId: "native-prompt-settings-attached",
+            }),
+            runId: RunId.make("prompt-settings-attached"),
+            text: "Run the checks",
+          },
+        });
+        assert.isTrue(
+          Option.isSome(
+            yield* manager.subscribePromptSuggestion(attachedThreadId).pipe(
+              Stream.filter((suggestion) => suggestion !== null),
+              Stream.runHead,
+            ),
+          ),
+        );
+        for (const enabled of [false, true]) {
+          yield* SubscriptionRef.update(settings, (current) => ({
+            ...current,
+            providerInstances: {
+              [modelSelection.instanceId]: {
+                driver: CODEX_DRIVER,
+                config: { promptSuggestions: enabled },
+              },
+            },
+          }));
+          assert.equal(yield* Queue.take(configured), enabled);
+          assert.strictEqual(yield* manager.open(input), runtime);
+        }
+        assert.isNull(
+          Option.getOrThrow(
+            yield* manager.subscribePromptSuggestion(attachedThreadId).pipe(Stream.runHead),
+          ),
+        );
+        assert.equal((yield* Ref.get(state)).openCount, 1);
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            setPromptSuggestionsEnabled: (enabled) =>
+              Queue.offer(configured, enabled).pipe(Effect.asVoid),
+            serverSettingsLayer: Layer.succeed(ServerSettings.ServerSettingsService, {
+              ...delegate,
+              getSettings: SubscriptionRef.get(settings),
+              subscribeChanges: Effect.succeed(
+                SubscriptionRef.changes(settings).pipe(Stream.drop(1)),
+              ),
+            }),
+          }),
+        ),
+      );
+    }),
+);
+
+it.effect(
+  "ProviderSessionManagerV2 isolates blocked prompt settings and preserves session update order",
+  () =>
+    Effect.gen(function* () {
+      const state = yield* Ref.make(emptyState);
+      const delegate = yield* ServerSettings.ServerSettingsService.pipe(
+        Effect.provide(ServerSettings.layerTest()),
+      );
+      const settings = yield* SubscriptionRef.make({
+        ...(yield* delegate.getSettings),
+        providerInstances: {
+          [modelSelection.instanceId]: {
+            driver: CODEX_DRIVER,
+            config: { promptSuggestions: true },
+          },
+        },
+      });
+      const held = ProviderSessionId.make("session-prompt-held");
+      const other = ProviderSessionId.make("session-prompt-other");
+      const blocked = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const firstApplied = yield* Deferred.make<void>();
+      const caughtUp = yield* Deferred.make<void>();
+      const otherDisabled = yield* Deferred.make<void>();
+      const otherEnabled = yield* Deferred.make<void>();
+      const blockedAgain = yield* Deferred.make<void>();
+      const cancelled = yield* Deferred.make<void>();
+      let heldHasBlocked = false;
+      let heldEnabled = true;
+      let otherHasDisabled = false;
+      yield* Effect.gen(function* () {
+        const manager = yield* ProviderSessionManager.ProviderSessionManagerV2;
+        const idAllocator = yield* IdAllocator.IdAllocatorV2;
+        const eventSink = yield* EventSink.EventSinkV2;
+        for (const providerSessionId of [held, other]) {
+          const threadId = ThreadId.make(`thread-${providerSessionId}`);
+          yield* eventSink.write({
+            events: [
+              yield* makeThreadCreatedEvent({ idAllocator, threadId, now: yield* DateTime.now }),
+            ],
+          });
+          yield* manager.open({ threadId, providerSessionId, modelSelection, runtimePolicy });
+        }
+        const setEnabled = (enabled: boolean) =>
+          SubscriptionRef.update(settings, (current) => ({
+            ...current,
+            providerInstances: {
+              [modelSelection.instanceId]: {
+                driver: CODEX_DRIVER,
+                config: { promptSuggestions: enabled },
+              },
+            },
+          }));
+        yield* setEnabled(false);
+        yield* Deferred.await(blocked);
+        yield* Deferred.await(otherDisabled);
+        yield* setEnabled(true);
+        yield* Deferred.await(otherEnabled);
+        yield* Deferred.succeed(release, undefined);
+        yield* Deferred.await(firstApplied);
+        yield* Deferred.await(caughtUp);
+        assert.isTrue(heldEnabled);
+        yield* setEnabled(false);
+        yield* Deferred.await(blockedAgain);
+        yield* manager.close(held);
+        assert.isTrue(yield* Deferred.isDone(cancelled));
+      }).pipe(
+        Effect.provide(
+          layerTest({
+            state,
+            idleTimeoutMs: 60_000,
+            setPromptSuggestionsEnabled: (enabled, sessionId) =>
+              Effect.gen(function* () {
+                if (sessionId === held) {
+                  if (!enabled) {
+                    if (heldHasBlocked) {
+                      yield* Deferred.succeed(blockedAgain, undefined);
+                      return yield* Effect.never.pipe(
+                        Effect.onInterrupt(() => Deferred.succeed(cancelled, undefined)),
+                      );
+                    }
+                    heldHasBlocked = true;
+                    yield* Deferred.succeed(blocked, undefined);
+                    yield* Deferred.await(release);
+                    heldEnabled = false;
+                    yield* Deferred.succeed(firstApplied, undefined);
+                  } else if (heldHasBlocked) {
+                    heldEnabled = true;
+                    yield* Deferred.succeed(caughtUp, undefined);
+                  }
+                } else if (!enabled) {
+                  otherHasDisabled = true;
+                  yield* Deferred.succeed(otherDisabled, undefined);
+                } else if (otherHasDisabled) yield* Deferred.succeed(otherEnabled, undefined);
+              }),
+            serverSettingsLayer: Layer.succeed(ServerSettings.ServerSettingsService, {
+              ...delegate,
+              getSettings: SubscriptionRef.get(settings),
+              subscribeChanges: Effect.succeed(
+                SubscriptionRef.changes(settings).pipe(Stream.drop(1)),
+              ),
+            }),
+          }),
+        ),
+      );
+    }),
+);
+
 it.effect("ProviderSessionManagerV2 drains subscribers when the provider stops", () =>
   Effect.gen(function* () {
     const state = yield* Ref.make(emptyState);
@@ -1638,6 +1873,23 @@ it.effect("ProviderSessionManagerV2 drains subscribers when the provider stops",
         driver: CODEX_DRIVER,
         nativeTurnId: "provider-stop-turn",
       });
+      const suggested = yield* manager.subscribePromptSuggestion(threadId).pipe(
+        Stream.filter((value) => value !== null),
+        Stream.runHead,
+        Effect.forkScoped,
+      );
+      yield* Queue.offer(adapterQueue!, {
+        type: "prompt_suggestion.updated",
+        driver: CODEX_DRIVER,
+        threadId,
+        suggestion: {
+          instanceId: modelSelection.instanceId,
+          providerThreadId,
+          runId: RunId.make("suggestion-run"),
+          text: "Run the checks",
+        },
+      });
+      assert.equal(Option.getOrThrow(yield* Fiber.join(suggested))?.text, "Run the checks");
       yield* Queue.offer(adapterQueue!, {
         type: "turn.terminal",
         driver: CODEX_DRIVER,
@@ -1665,6 +1917,9 @@ it.effect("ProviderSessionManagerV2 drains subscribers when the provider stops",
         ["turn.terminal", "provider_session.updated"],
       );
       assert.isTrue(Option.isNone(yield* manager.get(providerSessionId)));
+      assert.isNull(
+        Option.getOrThrow(yield* manager.subscribePromptSuggestion(threadId).pipe(Stream.runHead)),
+      );
       assert.equal((yield* Ref.get(state)).closeCount, 1);
     });
 
@@ -3384,6 +3639,29 @@ it.effect(
         );
 
         yield* manager.detach({ providerSessionId, threadId: secondThreadId });
+        const afterDetach = yield* subscribe;
+        yield* Queue.offer(queue!, {
+          type: "prompt_suggestion.updated",
+          driver: CODEX_DRIVER,
+          threadId: secondThreadId,
+          suggestion: {
+            instanceId: modelSelection.instanceId,
+            providerThreadId: secondProviderThread.id,
+            runId: idAllocator.derive.run({ threadId: secondThreadId, ordinal: 1 }),
+            text: "Run the checks",
+          },
+        });
+        yield* Queue.offer(queue!, {
+          type: "provider_session.updated",
+          driver: CODEX_DRIVER,
+          providerSession: firstRuntime.providerSession,
+        });
+        yield* afterDetach.events.pipe(Stream.runHead);
+        assert.isNull(
+          Option.getOrThrow(
+            yield* manager.subscribePromptSuggestion(secondThreadId).pipe(Stream.runHead),
+          ),
+        );
         yield* manager.open({
           threadId: secondThreadId,
           providerSessionId,

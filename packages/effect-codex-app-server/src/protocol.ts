@@ -499,7 +499,19 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
         ...(payload !== undefined ? { params: payload } : {}),
       }).pipe(Effect.tapError(() => removePending(String(requestId))));
       return yield* Deferred.await(deferred).pipe(
-        Effect.onInterrupt(() => removePending(String(requestId))),
+        Effect.onInterrupt(() =>
+          removePending(String(requestId)).pipe(
+            Effect.andThen(
+              method === "thread/sample"
+                ? offerOutgoing({
+                    id: `cancel:${requestId}`,
+                    method: "thread/sample/cancel",
+                    params: { requestId },
+                  }).pipe(Effect.ignore)
+                : Effect.void,
+            ),
+          ),
+        ),
       );
     });
 

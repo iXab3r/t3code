@@ -40,6 +40,7 @@ import {
   AuthOrchestrationOperateScope,
   ProviderDriverKind,
   ProviderInstanceId,
+  providerPromptSuggestionsEnabled,
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
 } from "@t3tools/contracts";
 import type { EnvironmentConnectionPresentation } from "@t3tools/client-runtime/connection";
@@ -78,6 +79,12 @@ import {
   replaceTextRange,
 } from "../../composer-logic";
 import { DEFAULT_COMPOSER_PLACEHOLDER } from "../../composerPlaceholder";
+import { useServerConfigs } from "../../state/entities";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { useEnvironmentQuery } from "../../state/query";
+import { dismissedPromptSuggestion as dismissedPromptSuggestionAtom } from "@t3tools/client-runtime/state/orchestration";
+import { useAtom } from "@effect/atom-react";
+import { Button } from "../ui/button";
 import {
   deriveComposerSendState,
   getAntigravitySendBlockReason,
@@ -941,6 +948,22 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
   });
 
   const selectedPromptEffort = composerProviderState.promptEffort;
+  const suggestionConfig = useServerConfigs().get(environmentId);
+  const suggestionsEnabled =
+    suggestionConfig?.environment.capabilities.promptSuggestions === true &&
+    providerPromptSuggestionsEnabled(suggestionConfig.settings, selectedInstanceId);
+  const { data: nativePromptSuggestion } = useEnvironmentQuery(
+    suggestionsEnabled && activeThreadId !== null
+      ? orchestrationEnvironment.v2.promptSuggestion({
+          environmentId,
+          input: { threadId: activeThreadId },
+        })
+      : null,
+  );
+  const promptSuggestionKey = `${environmentId}:${activeThreadId}:${props.activeThreadShell?.latestRun?.runId}`;
+  const [dismissedPromptSuggestion, setDismissedPromptSuggestion] = useAtom(
+    dismissedPromptSuggestionAtom(promptSuggestionKey),
+  );
   const selectedModelOptionsForDispatch = composerProviderState.modelOptionsForDispatch;
   const { enabled: planModeUiEnabled, interactionMode } = resolveComposerInteractionMode({
     planModeEnabled: settings.planModeEnabled,
@@ -1172,6 +1195,24 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     : settings.followUpBehavior;
   const composerSuggestionsVisible = composerMenuOpen;
   const composerSuggestionListVisible = composerSuggestionsVisible && composerMenuItems.length > 0;
+  const promptSuggestionText =
+    suggestionsEnabled &&
+    nativePromptSuggestion?.instanceId === selectedInstanceId &&
+    nativePromptSuggestion.runId === props.activeThreadShell?.latestRun?.runId &&
+    !dismissedPromptSuggestion &&
+    phase !== "running" &&
+    !isSendBusy &&
+    canOperateThread &&
+    environmentUnavailable === null &&
+    !isComposerApprovalState &&
+    pendingUserInputs.length === 0 &&
+    !showPlanFollowUpPrompt &&
+    !isEditingQueuedMessage &&
+    !composerMenuOpen &&
+    prompt.length === 0 &&
+    !composerDraftHasUserContent(composerDraft)
+      ? nativePromptSuggestion.text
+      : null;
   const activePendingUserInput = pendingUserInputs[0] ?? null;
   const isChoiceOnlyPendingQuestion =
     activePendingProgress?.activeQuestion?.allowCustomAnswer === false;
@@ -1579,6 +1620,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     contextIds: string[],
   ) => {
     refreshWorkspaceSnapshotOnTyping();
+    if (nextPrompt.length > 0) setDismissedPromptSuggestion(true);
     if (activePendingProgress?.activeQuestion && pendingUserInputs.length > 0) {
       if (activePendingProgress.activeQuestion.allowCustomAnswer === false) return;
       setComposerCursor(nextCursor);
@@ -2182,6 +2224,14 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
 
   const onComposerCommandKey = (key: string, event: KeyboardEvent, isTaskItem?: boolean) =>
     composerCommandKeyHandler({
+      ...(promptSuggestionText === null
+        ? {}
+        : {
+            promptSuggestion: {
+              text: promptSuggestionText,
+              dismiss: () => setDismissedPromptSuggestion(true),
+            },
+          }),
       keybindings,
       sendShortcut: settings.sendShortcut,
       routeKind,
@@ -3332,6 +3382,18 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                   />
                 ) : null}
                 <ComposerContextActionsContext value={composerContextActions}>
+                  {isMobileViewport && promptSuggestionText !== null ? (
+                    <Button
+                      variant="ghost-muted"
+                      size="sm"
+                      onClick={() => {
+                        setDismissedPromptSuggestion(true);
+                        editPromptFromTraits(() => promptSuggestionText);
+                      }}
+                    >
+                      Use suggestion
+                    </Button>
+                  ) : null}
                   <ComposerPromptEditor
                     draftKey={composerDraftTargetKey}
                     // Switching threads lands focus here, so the label names the thread.
@@ -3365,7 +3427,8 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                     onCitationDraftSave={saveCitationDraftToPromptStable}
                     onPaste={onComposerPasteStable}
                     placeholder={
-                      isComposerApprovalState
+                      promptSuggestionText ??
+                      (isComposerApprovalState
                         ? activePendingApproval?.supportsFeedback
                           ? "Send feedback to decline this request"
                           : "Send a message to decline and redirect the agent"
@@ -3379,7 +3442,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
                               ? "Choose a project above to start a thread"
                               : showProviderUnavailable
                                 ? "Enable a provider in Settings to send a message"
-                                : DEFAULT_COMPOSER_PLACEHOLDER
+                                : DEFAULT_COMPOSER_PLACEHOLDER)
                     }
                     disabled={
                       projectSelectionRequired ||

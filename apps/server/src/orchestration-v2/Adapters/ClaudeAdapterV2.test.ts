@@ -2864,6 +2864,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
     });
 
   const makeWakeHarnessWithOptions = (options?: {
+    readonly beforeOpen?: Effect.Effect<void>;
     readonly close?: (sdkMessages: Queue.Queue<SDKMessage>) => Effect.Effect<void>;
     readonly interrupt?: Effect.Effect<void>;
     readonly setPermissionMode?: ClaudeAdapterV2.ClaudeAgentSdkQuerySession["setPermissionMode"];
@@ -2959,6 +2960,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
           open: (input) =>
             Effect.gen(function* () {
               openedOptions = input.options;
+              yield* options?.beforeOpen ?? Effect.void;
               const processMessages =
                 options?.freshQueueOnReopen === true && processQueues.length > 0
                   ? yield* Queue.unbounded<SDKMessage>()
@@ -3119,6 +3121,120 @@ describe("ClaudeAdapterV2 background wake turns", () => {
       };
     });
   const makeWakeHarness = makeWakeHarnessWithOptions();
+
+  it.effect("applies a disable received while the native query is opening", () =>
+    Effect.gen(function* () {
+      const opening = yield* Deferred.make<void>();
+      const release = yield* Deferred.make<void>();
+      const harness = yield* makeWakeHarnessWithOptions({
+        settings: { ...DEFAULT_CLAUDE_SETTINGS, promptSuggestions: true },
+        beforeOpen: Deferred.succeed(opening, undefined).pipe(
+          Effect.andThen(Deferred.await(release)),
+        ),
+      });
+      const starting = yield* harness.runtime
+        .startTurn(
+          makeClaudeTestTurnInput({
+            threadId: harness.threadId,
+            providerThread: harness.providerThread,
+            now: DateTime.makeUnsafe(0),
+            attemptId: RunAttemptId.make("attempt-suggestion-startup"),
+            text: "Check the work",
+            attachments: [],
+          }),
+        )
+        .pipe(Effect.forkScoped);
+      yield* Deferred.await(opening);
+      const disabling = yield* harness.runtime.setPromptSuggestionsEnabled!(false).pipe(
+        Effect.forkScoped({ startImmediately: true }),
+      );
+      yield* Deferred.succeed(release, undefined);
+      yield* Fiber.join(starting);
+      yield* Fiber.join(disabling);
+      assert.equal(harness.getOpenedOptions()?.promptSuggestions, true);
+      assert.deepInclude(harness.liveSelectionChanges, { promptSuggestionEnabled: false });
+    }).pipe(
+      Effect.scoped,
+      Effect.provide(
+        Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+      ),
+    ),
+  );
+
+  it.effect.each([
+    { enabled: false, nativeDisabled: false },
+    { enabled: true, nativeDisabled: false },
+    { enabled: true, nativeDisabled: true },
+  ])(
+    "receives native prompt suggestions with enabled=$enabled and nativeDisabled=$nativeDisabled",
+    ({ enabled, nativeDisabled }) =>
+      Effect.gen(function* () {
+        const harness = yield* makeWakeHarnessWithOptions({
+          settings: {
+            ...DEFAULT_CLAUDE_SETTINGS,
+            promptSuggestions: enabled,
+            launchArgs: nativeDisabled ? `--settings '{"promptSuggestionEnabled":false}'` : "",
+          },
+          freshQueueOnReopen: true,
+          close: Queue.shutdown,
+        });
+        const start = (attempt: string) =>
+          harness.runtime.startTurn(
+            makeClaudeTestTurnInput({
+              threadId: harness.threadId,
+              providerThread: harness.providerThread,
+              now: DateTime.makeUnsafe(0),
+              attemptId: RunAttemptId.make(attempt),
+              text: "Check the work",
+              attachments: [],
+            }),
+          );
+        yield* start("suggestion-first");
+        assert.equal(harness.getOpenedOptions()?.promptSuggestions, enabled ? true : undefined);
+        yield* harness.offerAndWait(turnOneResult);
+        yield* harness.awaitTerminal(1);
+        const frame = claudeSdkFrame({
+          type: "prompt_suggestion",
+          suggestion: "Run the checks",
+          session_id: WAKE_NATIVE_SESSION,
+          uuid: "suggestion-event",
+        });
+        yield* harness.offerAndWait(frame);
+        const suggestions = () =>
+          harness.events.filter((event) => event.type === "prompt_suggestion.updated");
+        if (enabled) yield* harness.until(() => suggestions().length === 1);
+        assert.equal(suggestions().length, enabled ? 1 : 0);
+        const suggestion = suggestions()[0];
+        if (suggestion?.type === "prompt_suggestion.updated") {
+          assert.equal(suggestion.suggestion?.runId, "run-suggestion-first");
+          assert.equal(suggestion.suggestion?.text, "Run the checks");
+        }
+        assert.isFalse(yield* harness.hasPendingBackgroundWork);
+        yield* harness.runtime.setPromptSuggestionsEnabled!(!enabled);
+        if (enabled)
+          assert.deepInclude(harness.liveSelectionChanges, { promptSuggestionEnabled: false });
+        yield* start("suggestion-second");
+        assert.equal(harness.getOpenedOptions()?.promptSuggestions, true);
+        yield* harness.offerAndWait({ ...frame, uuid: "00000000-0000-0000-0000-000000000002" });
+        assert.equal(suggestions().length, enabled ? 1 : 0);
+        yield* harness.offerAndWait(makeResultFrame({ uuid: "second-result", result: "Done" }));
+        yield* harness.awaitTerminal(2);
+        yield* harness.offerAndWait({ ...frame, uuid: "00000000-0000-0000-0000-000000000003" });
+        if (!enabled) yield* harness.until(() => suggestions().length === 1);
+        assert.equal(suggestions().length, 1);
+        if (enabled) {
+          yield* harness.runtime.setPromptSuggestionsEnabled!(true);
+          assert.deepEqual(harness.liveSelectionChanges.at(-1), {
+            promptSuggestionEnabled: nativeDisabled ? false : null,
+          });
+        }
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(
+          Layer.mergeAll(IdAllocator.layer, McpProviderSessions.layer, NodeServices.layer),
+        ),
+      ),
+  );
 
   it.effect.each(["release-after", "cancel-after", "release-before", "resume-pending"] as const)(
     "keeps attachment reservations across compaction: %s boundary",

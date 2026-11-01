@@ -43,6 +43,7 @@ export function composerCommandKeyHandler(input: {
   readonly isSoftwareKeyboardOpen: boolean;
   readonly planModeUiEnabled: boolean;
   readonly isLiteralPendingAnswer: boolean;
+  readonly promptSuggestion?: { readonly text: string; readonly dismiss: () => void };
   readonly pendingUserInputs: ReadonlyArray<PendingUserInput>;
   readonly promptHistoryMessages: ChatComposerProps["promptHistoryMessages"];
   readonly promptHistoryPositionRef: RefObject<{
@@ -215,6 +216,22 @@ export function composerCommandKeyHandler(input: {
     const { trigger } = resolveActiveComposerTrigger();
     const menuIsActive =
       !isLiteralPendingAnswer && (composerMenuOpenRef.current || trigger !== null);
+    if (
+      !menuIsActive &&
+      input.promptSuggestion &&
+      promptRef.current.length === 0 &&
+      !event.isComposing &&
+      event.keyCode !== 229 &&
+      !event.shiftKey &&
+      !event.altKey &&
+      !event.ctrlKey &&
+      !event.metaKey &&
+      (key === "Tab" || key === "ArrowRight" || key === "Escape")
+    ) {
+      input.promptSuggestion.dismiss();
+      if (key !== "Escape") replacePromptFromHistory(input.promptSuggestion.text);
+      return true;
+    }
     if (key === "Escape") {
       if (!menuIsActive || event.isComposing || event.keyCode === 229) return false;
       dismissComposerTrigger(trigger);

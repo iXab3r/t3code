@@ -52,7 +52,7 @@ describe("ProviderSettingsForm helpers", () => {
     expect(next).toEqual({ forkOwned: 1 });
   });
 
-  it("stores false boolean fields when true is the default", () => {
+  it("uses boolean controls and stores values according to their defaults", () => {
     const next = nextProviderConfigWithFieldValue(
       undefined,
       {
@@ -66,6 +66,17 @@ describe("ProviderSettingsForm helpers", () => {
     );
 
     expect(next).toEqual({ experimental: false });
+
+    for (const driver of ["codex", "claudeAgent"]) {
+      const definition = providerClients.get(ProviderDriverKind.make(driver))!;
+      const field = deriveProviderSettingsFields(definition).find(
+        (field) => field.key === "promptSuggestions",
+      )!;
+      expect(field).toMatchObject({ control: "switch", defaultBooleanValue: false });
+      const enabled = nextProviderConfigWithFieldValue(undefined, field, true);
+      expect(enabled).toEqual({ promptSuggestions: true });
+      expect(nextProviderConfigWithFieldValue(enabled, field, false)).toBeUndefined();
+    }
   });
 });
 

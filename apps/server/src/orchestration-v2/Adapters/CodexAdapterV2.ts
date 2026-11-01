@@ -80,6 +80,8 @@ import type {
 import * as CodexClient from "effect-codex-app-server/client";
 import * as CodexErrors from "effect-codex-app-server/errors";
 import * as CodexSchema from "effect-codex-app-server/schema";
+import { HttpClient } from "effect/http";
+import * as CodexPromptSuggestions from "../../provider/CodexPromptSuggestions.ts";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -87,6 +89,7 @@ import * as DateTime from "effect/DateTime";
 import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
+import * as FiberMap from "effect/FiberMap";
 import * as FileSystem from "effect/FileSystem";
 import * as Function from "effect/Function";
 import * as Layer from "effect/Layer";
@@ -1633,6 +1636,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
   adapterOptions: CodexAdapterV2Options,
 ) {
   const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
+  const http = yield* Effect.serviceOption(HttpClient.HttpClient);
   const readMcpSession = (threadId: ThreadId | null) =>
     // @effect-diagnostics-next-line effectSucceedWithVoid:off - This optional result requires undefined, not the wider void type.
     threadId === null ? Effect.succeed(undefined) : mcpSessions.read(threadId);
@@ -1940,6 +1944,50 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           yield* emitImageWorkState(context, false);
           imageTurns.delete(context.nativeTurnId);
         });
+
+        let promptSuggestionsEnabled = adapterOptions.settings.promptSuggestions;
+        const generatePromptSuggestion = Option.isSome(http)
+          ? yield* CodexPromptSuggestions.make().pipe(
+              Effect.provideService(CodexClient.CodexAppServerClient, client),
+              Effect.provideService(HttpClient.HttpClient, http.value),
+            )
+          : undefined;
+        const pendingSuggestions = yield* FiberMap.make<string, void, never>();
+        const cancelPromptSuggestion = Effect.fn("CodexAdapterV2.cancelPromptSuggestion")(
+          (threadId: string) => FiberMap.remove(pendingSuggestions, threadId),
+        );
+        const predictNextPrompt = Effect.fn("CodexAdapterV2.predictNextPrompt")(
+          function* (context: ActiveCodexTurnContext, nativeTurnId: string) {
+            if (
+              generatePromptSuggestion === undefined ||
+              !promptSuggestionsEnabled ||
+              context.subagent !== null ||
+              context.input.message.createdBy !== "user"
+            )
+              return;
+            const threadId = yield* getNativeThreadId(context.providerThread);
+            yield* cancelPromptSuggestion(threadId);
+            yield* generatePromptSuggestion(threadId, nativeTurnId).pipe(
+              Effect.flatMap((text) =>
+                text === null
+                  ? Effect.void
+                  : emitProviderEvent({
+                      type: "prompt_suggestion.updated",
+                      driver: CODEX_PROVIDER,
+                      threadId: context.input.threadId,
+                      suggestion: {
+                        instanceId: adapterOptions.instanceId,
+                        providerThreadId: context.providerThread.id,
+                        runId: context.input.runId,
+                        text,
+                      },
+                    }),
+              ),
+              FiberMap.run(pendingSuggestions, threadId),
+            );
+          },
+          (effect) => Effect.ignore(effect),
+        );
 
         // Setting a goal passes through cleared and paused states; publish only the result.
         const goalUpdatesHeld = new Set<string>();
@@ -4481,6 +4529,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
 
         yield* client.handleServerNotification("turn/started", (payload) =>
           Effect.gen(function* () {
+            yield* cancelPromptSuggestion(payload.threadId);
             const context = (yield* Ref.get(activeTurns)).get(payload.turn.id);
             if (context !== undefined) {
               if (context.nativeStartReady !== undefined) {
@@ -6465,7 +6514,10 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                       : { failureErrorInfo: payload.turn.error.codexErrorInfo }),
                   }),
             };
-            if (!(yield* retryCapacityFailure(terminal))) yield* finalizeCodexTurn(terminal);
+            if (!(yield* retryCapacityFailure(terminal))) {
+              yield* finalizeCodexTurn(terminal);
+              if (status === "completed") yield* predictNextPrompt(context, payload.turn.id);
+            }
           }),
         );
 
@@ -6641,6 +6693,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             codexInput: ReadonlyArray<CodexSchema.V2TurnStartParams__UserInput>,
           ) {
             const threadId = yield* getNativeThreadId(turnInput.providerThread);
+            yield* cancelPromptSuggestion(threadId);
             const mcpSession = yield* mcpSessions.read(turnInput.threadId);
             const turnStartParams = yield* buildCodexTurnStartParams({
               nativeThreadId: threadId,
@@ -6901,6 +6954,12 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           driver: CODEX_PROVIDER,
           providerSessionId: input.providerSessionId,
           providerSession: session,
+          setPromptSuggestionsEnabled: Effect.fn("CodexAdapterV2.setPromptSuggestionsEnabled")(
+            function* (enabled) {
+              promptSuggestionsEnabled = enabled;
+              if (!enabled) yield* FiberMap.clear(pendingSuggestions);
+            },
+          ),
           events: Stream.fromEffectRepeat(Queue.take(events)),
           canReuseContextUsage: canReuseCodexContextUsage,
           // Idle release can beat delayed subagent resumes: Codex reports them completed between turns with no resume-expected signal.
@@ -7181,6 +7240,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           unloadThread: Effect.fn("CodexAdapterV2.unloadThread")(
             function* (unloadInput) {
               const nativeThreadId = yield* getNativeThreadId(unloadInput.providerThread);
+              yield* cancelPromptSuggestion(nativeThreadId);
               sessionApprovals.delete(nativeThreadId);
               yield* client.request("thread/unsubscribe", { threadId: nativeThreadId });
             },
@@ -7743,6 +7803,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           rollbackThread: Effect.fn("CodexAdapterV2.rollbackThread")(
             function* (threadInput) {
               const threadId = yield* getNativeThreadId(threadInput.providerThread);
+              yield* cancelPromptSuggestion(threadId);
               const numTurns = yield* resolveCodexRollbackTurnCount(threadInput);
               const nativeConversationHeadRef =
                 threadInput.target.type === "provider_turn"
