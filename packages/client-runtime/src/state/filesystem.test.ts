@@ -82,20 +82,30 @@ describe("filesystem browse model", () => {
   });
 
   it("recovers wrong-layout prefixes after literal matches without changing exact-name navigation", () => {
+    const variants = [
+      { text: "ьщвуд", source: "original" as const },
+      { text: "model", source: "keyboard-layout" as const },
+    ];
     const entries = ["model", "ьщвуд-extra", "model-extra", ".model", "ьщвуд"].map((name) => ({
       name,
       fullPath: `~/projects/${name}`,
     }));
 
-    expect(filterFilesystemBrowseEntries(entries, "ьщвуд")).toEqual({
+    expect(filterFilesystemBrowseEntries(entries, "ьщвуд", variants)).toEqual({
       visibleEntries: [entries[1], entries[4], entries[0], entries[2]],
       exactEntry: entries[4],
     });
-    expect(filterFilesystemBrowseEntries([entries[0]!], "ьщвуд")).toEqual({
+    expect(filterFilesystemBrowseEntries([entries[0]!], "ьщвуд", variants)).toEqual({
       visibleEntries: [entries[0]],
       exactEntry: null,
     });
-    expect(filterFilesystemBrowseEntries(entries, ".ьщвуд")).toEqual({
+    expect(
+      filterFilesystemBrowseEntries(
+        entries,
+        ".ьщвуд",
+        variants.map((variant) => ({ ...variant, text: `.${variant.text}` })),
+      ),
+    ).toEqual({
       visibleEntries: [entries[3]],
       exactEntry: null,
     });

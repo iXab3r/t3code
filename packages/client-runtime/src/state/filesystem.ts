@@ -73,8 +73,9 @@ export function getFilesystemBrowsePath(query: string, platform = "", enabled = 
 export function filterFilesystemBrowseEntries(
   entries: ReadonlyArray<FilesystemBrowseEntry>,
   query: string,
+  queryVariants = searchKeyboardLayout.getQueryVariants(query),
 ) {
-  const variants = searchKeyboardLayout.getQueryVariants(query).map((variant) => ({
+  const variants = queryVariants.map((variant) => ({
     ...variant,
     text: variant.text.toLowerCase(),
   }));

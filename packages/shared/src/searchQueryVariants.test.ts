@@ -4,20 +4,24 @@ import { createSearchKeyboardLayout, getSearchQueryVariants } from "./searchQuer
 
 describe("getSearchQueryVariants", () => {
   it.each([
-    ["ьщвуд", "model"],
-    ["ЬЩВУД", "MODEL"],
-    [".ьщвуд-12", ".model-12"],
-    ["  ыек ", "  str "],
-    ["ёхжэбю", "`[;',."],
+    ["λλ", "ll"],
+    ["ΛΛ", "LL"],
+    [".λλ-12", ".ll-12"],
+    ["  λ ", "  l "],
+    ["λ🙂", "l🙂"],
   ])("preserves the original query and recovers %s as %s", (query, recovered) => {
-    expect(getSearchQueryVariants(query)).toEqual([
+    const layout = new Map([
+      ["λ", "l"],
+      ["Λ", "L"],
+    ]);
+    expect(getSearchQueryVariants(query, [layout])).toEqual([
       { text: query, source: "original" },
       { text: recovered, source: "keyboard-layout" },
     ]);
   });
 
-  it.each(["", "model", "mщdel", "🙂", "αф"])(
-    "keeps literal, mixed-script, and unsupported input %s intact",
+  it.each(["", "model", "mщdel", "🙂", "αф", "ьщвуд"])(
+    "keeps input %s literal without a supplied layout",
     (query) => {
       expect(getSearchQueryVariants(query)).toEqual([{ text: query, source: "original" }]);
     },
@@ -42,6 +46,7 @@ describe("getSearchQueryVariants", () => {
 
 describe("createSearchKeyboardLayout", () => {
   it.each([
+    ["ьщвуд", ["KeyM", "KeyO", "KeyD", "KeyE", "KeyL"], "model"],
     ["μοδελ", ["KeyM", "KeyO", "KeyD", "KeyE", "KeyL"], "model"],
     ["צםגקך", ["KeyM", "KeyO", "KeyD", "KeyE", "KeyL"], "model"],
     ["zy", ["KeyY", "KeyZ"], "yz"],
@@ -64,7 +69,7 @@ describe("createSearchKeyboardLayout", () => {
     ]);
   });
 
-  it("retains learned mappings across switches and keeps the Russian fallback", () => {
+  it("retains learned mappings across switches without guessing unknown letters", () => {
     const layout = createSearchKeyboardLayout();
     layout.recordKey({ code: "KeyY", key: "z" });
     layout.recordKey({ code: "KeyZ", key: "z" });
@@ -73,7 +78,7 @@ describe("createSearchKeyboardLayout", () => {
       { text: "zα", source: "original" },
       { text: "ya", source: "keyboard-layout" },
     ]);
-    expect(layout.getQueryVariants("ьщвуд")).toEqual(getSearchQueryVariants("ьщвуд"));
+    expect(layout.getQueryVariants("ьщвуд")).toEqual([{ text: "ьщвуд", source: "original" }]);
     layout.recordKey({ code: "KeyF", key: "ф" });
     expect(layout.getQueryVariants("ф")).toEqual([
       { text: "ф", source: "original" },

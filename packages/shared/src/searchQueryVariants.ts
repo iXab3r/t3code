@@ -1,14 +1,3 @@
-const US_KEYS = "`qwertyuiop[]asdfghjkl;'zxcvbnm,.";
-const RUSSIAN_TO_US = new Map(
-  Array.from("ёйцукенгшщзхъфывапролджэячсмитьбю").flatMap((character, index) => {
-    const replacement = US_KEYS[index]!;
-    return [
-      [character, replacement] as const,
-      [character.toUpperCase(), replacement.toUpperCase()] as const,
-    ];
-  }),
-);
-const DEFAULT_LAYOUTS = [RUSSIAN_TO_US];
 const US_PUNCTUATION_KEYS = new Map([
   ["Backquote", "`"],
   ["Minus", "-"],
@@ -39,7 +28,7 @@ type SearchQueryVariant = {
 
 export function getSearchQueryVariants(
   rawQuery: string,
-  layouts: ReadonlyArray<ReadonlyMap<string, string>> = DEFAULT_LAYOUTS,
+  layouts: ReadonlyArray<ReadonlyMap<string, string>> = [],
 ) {
   const variants: SearchQueryVariant[] = [{ text: rawQuery, source: "original" }];
   const seen = new Set([rawQuery]);
@@ -91,8 +80,7 @@ export function createSearchKeyboardLayout() {
         learned.set(upper, ascii.toUpperCase());
     },
     getQueryVariants(query: string) {
-      const variants = getSearchQueryVariants(query, layouts);
-      return variants.length > 1 ? variants : getSearchQueryVariants(query);
+      return getSearchQueryVariants(query, layouts);
     },
   };
 }
