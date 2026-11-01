@@ -626,8 +626,18 @@ export function makeProviderSettingsSchema<const Fields extends Schema.Struct.Fi
   );
 }
 
+const PromptSuggestionsSetting = Schema.Boolean.pipe(
+  Schema.withDecodingDefault(Effect.succeed(false)),
+  Schema.annotateKey({
+    title: "Prompt suggestions",
+    description: "Suggest your next message using the provider's native conversation context.",
+    providerSettingsForm: { control: "switch" },
+  }),
+);
+
 export const CodexSettings = makeProviderSettingsSchema(
   {
+    promptSuggestions: PromptSuggestionsSetting,
     setupMode: Schema.optionalKey(Schema.Literals(["managed", "existing"])).pipe(
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
@@ -678,7 +688,7 @@ export const CodexSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "shadowHomePath", "launchArgs"],
+    order: ["binaryPath", "homePath", "shadowHomePath", "promptSuggestions", "launchArgs"],
   },
 );
 export type CodexSettings = typeof CodexSettings.Type;
@@ -707,6 +717,7 @@ const InstanceIdleCompaction = Schema.Literals(
 
 export const ClaudeSettings = makeProviderSettingsSchema(
   {
+    promptSuggestions: PromptSuggestionsSetting,
     enabled: Schema.Boolean.pipe(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
@@ -771,10 +782,30 @@ export const ClaudeSettings = makeProviderSettingsSchema(
     ),
   },
   {
-    order: ["binaryPath", "homePath", "autoCompactWindow", "idleCompaction", "launchArgs"],
+    order: [
+      "binaryPath",
+      "homePath",
+      "autoCompactWindow",
+      "idleCompaction",
+      "promptSuggestions",
+      "launchArgs",
+    ],
   },
 );
 export type ClaudeSettings = typeof ClaudeSettings.Type;
+
+export function providerPromptSuggestionsEnabled(
+  settings: Pick<ServerSettings, "providerInstances">,
+  instanceId: ProviderInstanceId,
+): boolean {
+  const config = settings.providerInstances[instanceId]?.config;
+  return (
+    typeof config === "object" &&
+    config !== null &&
+    "promptSuggestions" in config &&
+    config.promptSuggestions === true
+  );
+}
 
 export const ANTIGRAVITY_AUTH_METHODS = [
   { value: "oauth-personal", label: "Google account" },

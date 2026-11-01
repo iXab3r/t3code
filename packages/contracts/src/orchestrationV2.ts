@@ -3546,6 +3546,14 @@ export type OrchestrationV2InternalCommand = typeof OrchestrationV2InternalComma
 
 export type OrchestrationV2ServerCommand = OrchestrationV2Command | OrchestrationV2InternalCommand;
 
+export const ProviderPromptSuggestion = Schema.Struct({
+  instanceId: ProviderInstanceId,
+  providerThreadId: ProviderThreadId,
+  runId: RunId,
+  text: TrimmedNonEmptyString,
+});
+export type ProviderPromptSuggestion = typeof ProviderPromptSuggestion.Type;
+
 export const ORCHESTRATION_V2_WS_METHODS = {
   dispatchCommand: "orchestration.dispatchCommand",
   getTurnDiff: "orchestration.getTurnDiff",
@@ -3566,6 +3574,7 @@ export const ORCHESTRATION_V2_WS_METHODS = {
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
   subscribeCommandOutput: "orchestration.subscribeCommandOutput",
+  subscribePromptSuggestion: "orchestration.subscribePromptSuggestion",
 } as const;
 
 export const OrchestrationV2SubscribeCommandOutputInput = Schema.Struct({
@@ -4196,6 +4205,10 @@ export const OrchestrationV2RpcSchemas = {
   subscribeCommandOutput: {
     input: OrchestrationV2SubscribeCommandOutputInput,
     output: OrchestrationV2CommandOutputFrame,
+  },
+  subscribePromptSuggestion: {
+    input: Schema.Struct({ threadId: ThreadId }),
+    output: Schema.NullOr(ProviderPromptSuggestion),
   },
 } as const;
 

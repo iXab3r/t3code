@@ -10,12 +10,14 @@ import {
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { settlePromise, squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime";
 import { AsyncResult } from "effect/reactivity";
-import { useAtomValue } from "@effect/atom-react";
+import { useAtom, useAtomValue } from "@effect/atom-react";
+import { dismissedPromptSuggestion } from "@t3tools/client-runtime/state/orchestration";
 import { clampFileAttachmentUploadBytes } from "@t3tools/client-runtime/state/attachments";
 import { pastedTextDisposition, replaceTextSelection } from "@t3tools/client-runtime/text-paste";
 import {
   PROVIDER_SEND_TURN_MAX_ATTACHMENTS,
   PROVIDER_SEND_TURN_MAX_INPUT_CHARS,
+  providerPromptSuggestionsEnabled,
   type ChatAttachment,
   type EnvironmentId,
   type MessageId,
@@ -32,7 +34,9 @@ import {
 import { StackActions, useFocusEffect, useNavigation } from "@react-navigation/native";
 import type { ReactNode } from "react";
 import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
-import { I18nManager, Keyboard, Platform, View, type ViewStyle } from "react-native";
+import { I18nManager, Keyboard, Platform, Pressable, View, type ViewStyle } from "react-native";
+import { orchestrationEnvironment } from "../../state/orchestration";
+import { useEnvironmentQuery } from "../../state/query";
 import { composerImageGallery } from "../../lib/composerImageGallery";
 import { filePreviewGallery } from "../../lib/filePreviewGallery";
 import { FilePreviewModal, type FilePreviewSource } from "../../components/FilePreviewModal";
@@ -500,6 +504,34 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
       ) ?? null
     );
   })();
+  const suggestionsEnabled =
+    props.serverConfig?.environment.capabilities.promptSuggestions === true &&
+    providerPromptSuggestionsEnabled(props.serverConfig.settings, currentModelSelection.instanceId);
+  const { data: nativeSuggestion } = useEnvironmentQuery(
+    suggestionsEnabled && !props.isDraft && !props.hidden
+      ? orchestrationEnvironment.v2.promptSuggestion({
+          environmentId: props.environmentId,
+          input: { threadId: props.selectedThread.id },
+        })
+      : null,
+  );
+  const suggestionKey = `${props.environmentId}:${props.selectedThread.id}:${props.selectedThread.latestRun?.runId}`;
+  const [dismissedSuggestion, setDismissedSuggestion] = useAtom(
+    dismissedPromptSuggestion(suggestionKey),
+  );
+  const suggestion =
+    suggestionsEnabled &&
+    !dismissedSuggestion &&
+    nativeSuggestion?.instanceId === currentModelSelection.instanceId &&
+    nativeSuggestion.runId === props.selectedThread.latestRun?.runId &&
+    props.canOperateThread &&
+    props.connectionState === "connected" &&
+    !props.activeThreadBusy &&
+    queuedEdit === null &&
+    draftMessage.length === 0 &&
+    draftAttachments.length === 0
+      ? nativeSuggestion.text
+      : null;
   const openDraftDocument = (attachment: ComposerDocumentAttachment) => {
     Keyboard.dismiss();
     navigation.navigate("ThreadAttachment", {
@@ -980,6 +1012,29 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 )}
               </View>
             </ComposerDictationDraftContent>
+            {suggestion !== null && !isSubmissionLocked && !isVoiceInputPresented ? (
+              <View className="flex-row items-center gap-2 px-3 pb-2">
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Use prompt suggestion"
+                  className="min-w-0 flex-1 py-2"
+                  onPress={() => {
+                    setDismissedSuggestion(true);
+                    props.onChangeDraftMessage(suggestion);
+                    inputRef.current?.focus();
+                  }}
+                >
+                  <Text numberOfLines={2} className="text-foreground-muted">
+                    {suggestion}
+                  </Text>
+                </Pressable>
+                <ComposerActionButton
+                  accessibilityLabel="Dismiss prompt suggestion"
+                  icon="xmark"
+                  onPress={() => setDismissedSuggestion(true)}
+                />
+              </View>
+            ) : null}
             <Animated.View
               style={[
                 compactEditor.editorStyle,
@@ -1017,6 +1072,7 @@ export const ThreadComposer = function ThreadComposer(props: ThreadComposerProps
                 skills={composerMenu.skills}
                 selection={composerMenu.selection}
                 onChangeText={(text) => {
+                  if (text.length > 0) setDismissedSuggestion(true);
                   if (!isSubmissionLocked) props.onChangeDraftMessage(text);
                 }}
                 onSelectionChange={composerMenu.onSelectionChange}

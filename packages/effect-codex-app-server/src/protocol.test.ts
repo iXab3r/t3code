@@ -23,6 +23,31 @@ const decodeJson = Schema.decodeEffect(Schema.fromJsonString(Schema.Unknown));
 
 it.layer(NodeServices.layer)("effect-codex-app-server protocol", (it) => {
   it.effect(
+    "cancels native samples when their caller is interrupted and keeps the connection usable",
+    () =>
+      Effect.gen(function* () {
+        const { stdio, input, output } = yield* makeInMemoryStdio();
+        const transport = yield* CodexProtocol.makeCodexAppServerPatchedProtocol({ stdio });
+        const sample = yield* transport
+          .request("thread/sample", { threadId: "parent" })
+          .pipe(Effect.forkScoped);
+        yield* Queue.take(output);
+        yield* Fiber.interrupt(sample);
+        assert.deepEqual(yield* decodeJson(yield* Queue.take(output)), {
+          id: "cancel:1",
+          method: "thread/sample/cancel",
+          params: { requestId: 1 },
+        });
+        yield* Queue.offer(input, encodeJsonl({ id: "cancel:1", result: {} }));
+        yield* Queue.offer(input, encodeJsonl({ id: 1, result: { text: "stale" } }));
+        const next = yield* transport.request("thread/read", {}).pipe(Effect.forkScoped);
+        yield* Queue.take(output);
+        yield* Queue.offer(input, encodeJsonl({ id: 2, result: { ok: true } }));
+        assert.deepEqual(yield* Fiber.join(next), { ok: true });
+      }),
+  );
+
+  it.effect(
     "encodes requests without a jsonrpc field and routes inbound requests and notifications",
     () =>
       Effect.gen(function* () {

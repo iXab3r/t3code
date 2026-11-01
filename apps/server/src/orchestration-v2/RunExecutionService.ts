@@ -376,6 +376,8 @@ export function routeProviderEvent(
   });
 
   switch (event.type) {
+    case "prompt_suggestion.updated":
+      return [false, state];
     case "provider_session.updated":
       return [false, state];
     case "app_thread.created": {

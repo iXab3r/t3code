@@ -92,6 +92,7 @@ const layerBackgroundPolicyAlwaysRun = Layer.mock(BackgroundPolicy.BackgroundPol
 });
 
 const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
+  promptSuggestions: false,
   enabled: false,
   binaryPath: "codex",
   homePath: "",
@@ -102,6 +103,7 @@ const makeCodexConfig = (overrides: Partial<CodexSettings>): CodexSettings => ({
 });
 
 const makeClaudeConfig = (overrides: Partial<ClaudeSettings>): ClaudeSettings => ({
+  promptSuggestions: false,
   enabled: false,
   binaryPath: "claude",
   homePath: "",

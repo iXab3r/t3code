@@ -1459,6 +1459,7 @@ const subagentDeviceInstructions: HookCallback = () =>
   });
 
 export function makeClaudeQueryOptions(input: {
+  readonly promptSuggestions?: boolean;
   readonly modelSelection: ModelSelection;
   readonly nativeThreadId: string;
   readonly resume: boolean;
@@ -1548,6 +1549,9 @@ export function makeClaudeQueryOptions(input: {
         ? "bypassPermissions"
         : (input.permissionMode ?? "default")),
     includePartialMessages: true,
+    ...((input.promptSuggestions ?? input.settings?.promptSuggestions)
+      ? { promptSuggestions: true }
+      : {}),
     ...(compiledSelection.effort === undefined
       ? {}
       : {
@@ -4065,6 +4069,9 @@ interface ActiveClaudeSubagent {
 }
 
 interface ClaudeLiveQueryContext {
+  readonly promptSuggestions: boolean;
+  promptSuggestionsApplied: boolean;
+  readonly originalPromptSuggestionSetting: boolean | null;
   readonly queryPolicy: ClaudeRuntimeQueryPolicy;
   readonly nativeThreadId: string;
   readonly query: ClaudeAgentSdkQuerySession;
@@ -4733,6 +4740,22 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
         const interruptedTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const steeredTurns = yield* Ref.make(new Set<OrchestrationV2ProviderTurn["id"]>());
         const queryContext = yield* Ref.make<ClaudeLiveQueryContext | null>(null);
+        let promptSuggestionsEnabled = adapterOptions.settings?.promptSuggestions ?? false;
+        const promptSuggestionLock = yield* Semaphore.make(1);
+        const applyPromptSuggestions = Effect.fn("ClaudeAdapterV2.applyPromptSuggestions")(
+          function* (live: ClaudeLiveQueryContext) {
+            while (
+              live.promptSuggestions &&
+              live.promptSuggestionsApplied !== promptSuggestionsEnabled
+            ) {
+              const enabled = promptSuggestionsEnabled;
+              yield* live.query.applyFlagSettings({
+                promptSuggestionEnabled: enabled ? live.originalPromptSuggestionSetting : false,
+              });
+              live.promptSuggestionsApplied = enabled;
+            }
+          },
+        );
         // A worktree handoff changes the project settings even within one session.
         let bypassCache: { cwd: string | null; availability: ClaudeBypassAvailability } | null =
           null;
@@ -9473,6 +9496,31 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           const message = input.message;
           const context = yield* Ref.get(activeTurn);
           const liveQuery = yield* Ref.get(queryContext);
+          if (message.type === "prompt_suggestion") {
+            const completed = liveQuery?.lastTurn;
+            if (
+              promptSuggestionsEnabled &&
+              liveQuery?.query === input.query &&
+              context === null &&
+              completed !== null &&
+              completed !== undefined &&
+              message.session_id === liveQuery.nativeThreadId &&
+              message.suggestion.trim().length > 0
+            ) {
+              yield* emitProviderEvent({
+                type: "prompt_suggestion.updated",
+                driver: CLAUDE_PROVIDER,
+                threadId: completed.input.threadId,
+                suggestion: {
+                  instanceId: adapterOptions.instanceId,
+                  providerThreadId: completed.input.providerThread.id,
+                  runId: completed.input.runId,
+                  text: message.suggestion.trim(),
+                },
+              });
+            }
+            return;
+          }
           if (
             context?.promptUuid === null &&
             liveQuery?.query === input.query &&
@@ -10115,6 +10163,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
             !existing.stopping &&
+            (!promptSuggestionsEnabled || existing.promptSuggestions) &&
             existing.selection.queryIdentity !== compiledSelection.queryIdentity &&
             canApplyClaudeSelectionLive(existing.selection, compiledSelection) &&
             (existing.selection.apiModelId === compiledSelection.apiModelId ||
@@ -10144,6 +10193,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             existing.nativeThreadId === nativeThreadId &&
             existing.queryPolicyKey === queryPolicyKey &&
             !existing.stopping &&
+            (!promptSuggestionsEnabled || existing.promptSuggestions) &&
             existing.selection.queryIdentity === compiledSelection.queryIdentity
           ) {
             // A denied ExitPlanMode leaves Claude in plan mode. Restore only from plan:
@@ -10174,6 +10224,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             !existing.stopping &&
             (yield* liveProcessRunsBackgroundWork(existing))
           ) {
+            if (
+              existing.nativeThreadId === nativeThreadId &&
+              existing.queryPolicyKey === queryPolicyKey &&
+              existing.selection.queryIdentity === compiledSelection.queryIdentity
+            )
+              return existing;
             return yield* new ClaudeBackgroundWorkBlocksQueryReplacementError();
           }
 
@@ -10212,6 +10268,7 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
             launchArgSettings,
           );
           const queryOptions = makeClaudeQueryOptions({
+            promptSuggestions: promptSuggestionsEnabled,
             modelSelection: turnInput.modelSelection,
             nativeThreadId,
             resume: shouldResume,
@@ -10285,6 +10342,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           });
           const closed = yield* Deferred.make<void, never>();
           const context: ClaudeLiveQueryContext = {
+            promptSuggestions: queryOptions.promptSuggestions === true,
+            promptSuggestionsApplied: queryOptions.promptSuggestions === true,
+            originalPromptSuggestionSetting:
+              typeof queryOptions.settings === "object"
+                ? (queryOptions.settings.promptSuggestionEnabled ?? null)
+                : null,
             queryPolicy,
             nativeThreadId,
             query: querySession,
@@ -10438,7 +10501,12 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
                     Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
                     Effect.provideService(Path.Path, path),
                   );
-            const querySession = yield* openQuery(turnInput, nativeThreadId);
+            const querySession = yield* openQuery(turnInput, nativeThreadId).pipe(
+              Effect.tap((live) =>
+                live.promptSuggestions ? applyPromptSuggestions(live) : Effect.void,
+              ),
+              promptSuggestionLock.withPermit,
+            );
             const context: ActiveClaudeTurnContext = {
               input: turnInput,
               queryPolicy: querySession.queryPolicy,
@@ -11017,6 +11085,26 @@ export const makeClaudeAdapterV2 = Effect.fn("makeClaudeAdapterV2")(function* (
           driver: CLAUDE_PROVIDER,
           providerSessionId: input.providerSessionId,
           providerSession: session,
+          setPromptSuggestionsEnabled: Effect.fn("ClaudeAdapterV2.setPromptSuggestionsEnabled")(
+            function* (enabled) {
+              if (enabled === promptSuggestionsEnabled) return;
+              promptSuggestionsEnabled = enabled;
+              yield* Ref.get(queryContext).pipe(
+                Effect.flatMap((live) =>
+                  live === null ? Effect.void : applyPromptSuggestions(live),
+                ),
+                promptSuggestionLock.withPermit,
+              );
+            },
+            Effect.mapError(
+              (cause) =>
+                new ProviderAdapter.ProviderAdapterProtocolError({
+                  driver: CLAUDE_PROVIDER,
+                  detail: "Could not update Claude prompt suggestions.",
+                  cause,
+                }),
+            ),
+          ),
           getModelContextWindow: (selection) =>
             resolveClaudeCatalogContextWindowTokens(BUNDLED_CLAUDE_MODEL_CATALOG, selection),
           events: Stream.fromEffectRepeat(Queue.take(events)),

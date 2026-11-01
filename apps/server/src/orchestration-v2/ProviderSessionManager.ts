@@ -9,6 +9,8 @@ import {
   type OrchestrationV2ProviderThread,
   OrchestrationV2RuntimeRequest,
   ProviderInstanceId,
+  providerPromptSuggestionsEnabled,
+  type ProviderPromptSuggestion,
   ProviderSessionId,
   ThreadId,
   type ProviderThreadId,
@@ -32,6 +34,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
 
 import { normalizeModelMetricLabel } from "../observability/Attributes.ts";
 import {
@@ -152,6 +155,9 @@ export const ProviderSessionManagerV2Error = Schema.Union([
 export type ProviderSessionManagerV2Error = typeof ProviderSessionManagerV2Error.Type;
 
 export interface ProviderSessionManagerV2Shape {
+  readonly subscribePromptSuggestion: (
+    threadId: ThreadId,
+  ) => Stream.Stream<ProviderPromptSuggestion | null>;
   readonly shutdown: Effect.Effect<void>;
   readonly open: (input: {
     readonly threadId: ThreadId;
@@ -342,6 +348,33 @@ export const layerWithOptions = (
       const projectService = yield* Effect.serviceOption(ProjectService.ProjectService);
       const eventSink = yield* EventSink.EventSinkV2;
       const commandOutput = yield* CommandOutputHub.CommandOutputHub;
+      const promptSuggestions = yield* SubscriptionRef.make(
+        new Map<ThreadId, ProviderPromptSuggestion>(),
+      );
+      const updatePromptSuggestion = Effect.fn("ProviderSessionManager.updatePromptSuggestion")(
+        (threadId: ThreadId, suggestion: ProviderPromptSuggestion | null) =>
+          SubscriptionRef.update(promptSuggestions, (current) => {
+            const next = new Map(current);
+            next.delete(threadId);
+            if (suggestion !== null) next.set(threadId, suggestion);
+            if (next.size > 128) next.delete(next.keys().next().value!);
+            return next;
+          }),
+      );
+      const clearPromptSuggestions = Effect.fn("ProviderSessionManager.clearPromptSuggestions")(
+        (entry: LiveSessionEntry) =>
+          SubscriptionRef.update(
+            promptSuggestions,
+            (current) =>
+              new Map(
+                [...current].filter(
+                  ([threadId, suggestion]) =>
+                    !entry.attachedThreadIds.has(threadId) ||
+                    suggestion.instanceId !== entry.runtime.instanceId,
+                ),
+              ),
+          ),
+      );
       const idAllocator = yield* IdAllocator.IdAllocatorV2;
       const providerEventIngestor = yield* ProviderEventIngestor.ProviderEventIngestorV2;
       const projectionStore = yield* ProjectionStore.ProjectionStoreV2;
@@ -1019,6 +1052,7 @@ export const layerWithOptions = (
               onNone: () => Effect.void,
               onSome: (entry) =>
                 Effect.gen(function* () {
+                  yield* clearPromptSuggestions(entry);
                   const releasedBackgroundTasks = yield* readReleasedBackgroundTasks({
                     entry,
                     reason: input.reason,
@@ -1710,6 +1744,11 @@ export const layerWithOptions = (
           });
         return {
           ...runtime,
+          rollbackThread: (input) =>
+            (input.providerThread.appThreadId === null
+              ? Effect.void
+              : updatePromptSuggestion(input.providerThread.appThreadId, null)
+            ).pipe(Effect.andThen(runtime.rollbackThread(input))),
           subscribeEvents,
           events: Stream.unwrap(
             subscribeEvents.pipe(Effect.map((subscription) => subscription.events)),
@@ -1815,11 +1854,15 @@ export const layerWithOptions = (
           startTurn: (input) =>
             observeActivity(
               providerSessionId,
-              ensureThreadAttached({
-                providerSessionId,
-                threadId: input.threadId,
-                providerInstanceId: runtime.instanceId,
-              }),
+              updatePromptSuggestion(input.threadId, null).pipe(
+                Effect.andThen(
+                  ensureThreadAttached({
+                    providerSessionId,
+                    threadId: input.threadId,
+                    providerInstanceId: runtime.instanceId,
+                  }),
+                ),
+              ),
             ).pipe(
               // Failed or stopped starts may omit turn.terminal; clear their turns so sessions can idle.
               Effect.andThen(
@@ -1945,6 +1988,18 @@ export const layerWithOptions = (
         return entry.runtime.events.pipe(
           Stream.runForEach((event) => {
             if (shutdownSignal.received) return Effect.void;
+            if (event.type === "prompt_suggestion.updated") {
+              return Effect.gen(function* () {
+                const current = (yield* Ref.get(sessions)).get(
+                  sessionKey(entry.runtime.providerSessionId),
+                );
+                if (
+                  current?.runtime === entry.runtime &&
+                  current.attachedThreadIds.has(event.threadId)
+                )
+                  yield* updatePromptSuggestion(event.threadId, event.suggestion);
+              });
+            }
             // Live output bypasses persistence and subscribers so floods cannot delay domain events.
             if (event.type === "command_output.delta") {
               return commandOutput.append(event);
@@ -1974,6 +2029,20 @@ export const layerWithOptions = (
                   )
                 : touchActivity(entry.runtime.providerSessionId, { providerActivity: true }),
             ).pipe(
+              Effect.andThen(
+                event.type === "provider_turn.updated" && event.providerTurn.status !== "completed"
+                  ? SubscriptionRef.update(
+                      promptSuggestions,
+                      (current) =>
+                        new Map(
+                          [...current].filter(
+                            ([, suggestion]) =>
+                              suggestion.providerThreadId !== event.providerTurn.providerThreadId,
+                          ),
+                        ),
+                    )
+                  : Effect.void,
+              ),
               Effect.andThen(
                 event.type === "provider_session.updated"
                   ? persistProviderSessionUpdate(entry, event)
@@ -2047,6 +2116,7 @@ export const layerWithOptions = (
               if (current?.runtime !== entry.runtime) {
                 return;
               }
+              yield* clearPromptSuggestions(current);
               if (stoppedByProvider && Exit.isSuccess(exit)) {
                 yield* releaseEntry({
                   providerSessionId: entry.runtime.providerSessionId,
@@ -2115,7 +2185,54 @@ export const layerWithOptions = (
         ),
       );
 
+      const configurePromptSuggestions = Effect.fn(
+        "ProviderSessionManager.configurePromptSuggestions",
+      )(
+        function* (entry: LiveSessionEntry) {
+          if (
+            Option.isNone(serverSettings) ||
+            entry.runtime.setPromptSuggestionsEnabled === undefined
+          )
+            return;
+          const enabled = providerPromptSuggestionsEnabled(
+            yield* serverSettings.value.getSettings,
+            entry.runtime.instanceId,
+          );
+          yield* entry.runtime.setPromptSuggestionsEnabled(enabled);
+          if (!enabled) {
+            const current = (yield* Ref.get(sessions)).get(
+              sessionKey(entry.runtime.providerSessionId),
+            );
+            if (current?.runtime === entry.runtime) yield* clearPromptSuggestions(current);
+          }
+        },
+        Effect.catch((cause) =>
+          Effect.logWarning("Could not update provider prompt suggestions.", { cause }),
+        ),
+      );
+      const watchPromptSuggestions = Effect.fn("ProviderSessionManager.watchPromptSuggestions")(
+        function* (entry: LiveSessionEntry) {
+          if (
+            Option.isNone(serverSettings) ||
+            entry.runtime.setPromptSuggestionsEnabled === undefined
+          )
+            return;
+          const changes = yield* serverSettings.value.subscribeChanges.pipe(
+            Effect.provideService(Scope.Scope, entry.scope),
+          );
+          yield* configurePromptSuggestions(entry);
+          yield* changes.pipe(
+            Stream.runForEach(() => configurePromptSuggestions(entry)),
+            Effect.forkIn(entry.scope, { startImmediately: true }),
+          );
+        },
+      );
       return ProviderSessionManagerV2.of({
+        subscribePromptSuggestion: (threadId) =>
+          SubscriptionRef.changes(promptSuggestions).pipe(
+            Stream.map((suggestions) => suggestions.get(threadId) ?? null),
+            Stream.changes,
+          ),
         shutdown,
         open: (input) =>
           sessionOpen.withLock(
@@ -2269,6 +2386,7 @@ export const layerWithOptions = (
                   payload: runtime.providerSession,
                 }),
               ).pipe(
+                Effect.andThen(watchPromptSuggestions(entry)),
                 // Release on interruption too; no event pump or idle timer exists to clean up yet.
                 Effect.onError((cause) =>
                   releaseEntry(
@@ -2395,6 +2513,7 @@ export const layerWithOptions = (
         ),
         detach: Effect.fn("ProviderSessionManager.detach")(
           function* (input) {
+            yield* updatePromptSuggestion(input.threadId, null);
             const key = sessionKey(input.providerSessionId);
             const currentEntry = (yield* Ref.get(sessions)).get(key);
             let detachedProviderThreads: ReadonlyArray<OrchestrationV2ProviderThread> = [];

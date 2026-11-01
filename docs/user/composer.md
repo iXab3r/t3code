@@ -30,6 +30,18 @@ at the end, leave the block. **Backspace** at the start of a code block turns it
 back into plain lines. Choose the language in a code block's corner to change
 it. Very large code blocks are shown without syntax highlighting.
 
+## Prompt suggestions
+
+Enable **Prompt suggestions** for a Codex or Claude instance in **Settings →
+Providers** to receive a suggested next message after the agent finishes. This
+is off by default and uses the provider's native suggestion support; availability
+depends on the provider, account and model. Suggestions can use additional model
+usage.
+
+In an empty composer, press **Tab** or **Right Arrow** to accept the suggestion,
+or **Escape** to dismiss it. On mobile, tap the suggestion. Accepting fills the
+composer so you can edit the message before sending.
+
 ## Attach files
 
 Attach up to 100 files per message. Each image can be up to 10 MiB, with at most
