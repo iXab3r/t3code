@@ -65,6 +65,8 @@ The ARM64 job runs packaging scripts through the existing JavaScript TypeScript
 compiler, avoiding Node's unreliable Wasm TypeScript parser under QEMU. The loader
 is passed only to build scripts and is absent from packaged runtime launch checks.
 Both CLI and desktop launch checks execute in the target ARM64 environment.
+ARM64 checks allow up to three minutes for startup and desktop interactions under
+CPU emulation; native x64 checks retain their usual limits.
 
 Versioned TeamCity settings synchronize from `.teamcity` on `main`. Builds use
 current TeamCity settings (`alwaysUseCurrent`) so inherited authorization is not

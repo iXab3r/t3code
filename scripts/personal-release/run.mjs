@@ -119,6 +119,7 @@ async function buildLinux(version, arch) {
     NodePath.join(output, runtime),
     "--expect-version",
     version,
+    ...(arch === "arm64" ? ["--startup-timeout-seconds", "180"] : []),
   ]);
   const linux = NodePath.join(output, "linux");
   const diagnostics = NodePath.join(output, "linux-launch-check");
@@ -182,6 +183,7 @@ async function buildLinux(version, arch) {
         NodePath.join(extracted, "t3code"),
         "--artifacts-dir",
         diagnostics,
+        ...(arch === "arm64" ? ["--step-timeout-seconds", "180"] : []),
       ]),
     ]);
     if (assets.includes("builder-debug.yml")) {

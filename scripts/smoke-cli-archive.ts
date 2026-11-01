@@ -61,6 +61,7 @@ const runExecutable = Effect.fn("runExecutable")(function* (
 const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   readonly archive: string;
   readonly expectVersion: string;
+  readonly startupTimeoutSeconds: number;
 }) {
   const fs = yield* FileSystem.FileSystem;
   const path = yield* Path.Path;
@@ -176,7 +177,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
     return true;
   });
   const ready = yield* pollUntilReady.pipe(
-    Effect.timeout(Duration.seconds(30)),
+    Effect.timeout(Duration.seconds(input.startupTimeoutSeconds)),
     Effect.orElseSucceed(() => false),
   );
   yield* server.kill({ killSignal: "SIGTERM" }).pipe(Effect.ignore);
@@ -188,7 +189,7 @@ const smokeCliArchive = Effect.fn("smokeCliArchive")(function* (input: {
   if (!ready) {
     return yield* new CliArchiveSmokeError({
       step: "serving from the extracted archive",
-      detail: `no 200 from / within 30s\n${stdout}${stderr}`,
+      detail: `no 200 from / within ${input.startupTimeoutSeconds}s\n${stdout}${stderr}`,
     });
   }
   yield* Effect.log(`[cli-smoke] ${root}: --version passed and serve answered on ${String(port)}.`);
@@ -199,6 +200,10 @@ const command = Command.make(
   {
     archive: Flag.String("archive"),
     expectVersion: Flag.String("expect-version"),
+    startupTimeoutSeconds: Flag.Int("startup-timeout-seconds").pipe(
+      Flag.withSchema(Schema.Int.check(Schema.isGreaterThan(0))),
+      Flag.withDefault(30),
+    ),
   },
   (input) => smokeCliArchive(input).pipe(Effect.scoped),
 ).pipe(Command.withDescription("Extract a CLI archive and run its executable."));

@@ -14,18 +14,21 @@ import { _electron, type ElectronApplication } from "playwright-core";
 const FIXTURE_DB = NodePath.join(import.meta.dirname, "fixtures/desktop-launch/statev2.sqlite");
 const THREAD_TITLE = "Release launch check";
 const THREAD_MESSAGE = "The release opens and shows this thread.";
-const STEP_TIMEOUT_MS = 60_000;
 
 const { values } = NodeUtil.parseArgs({
   options: {
     executable: { type: "string" },
     "artifacts-dir": { type: "string" },
+    "step-timeout-seconds": { type: "string", default: "60" },
   },
 });
 const executable = values.executable;
 if (!executable)
   throw new Error("Usage: smoke-desktop-app.ts --executable <app> [--artifacts-dir <dir>]");
 const artifactsDir = NodePath.resolve(values["artifacts-dir"] ?? "desktop-launch-check");
+const stepTimeoutMs = Number(values["step-timeout-seconds"]) * 1000;
+if (!Number.isSafeInteger(stepTimeoutMs) || stepTimeoutMs <= 0)
+  throw new Error("--step-timeout-seconds must be a positive number of seconds.");
 
 const home = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-desktop-launch-"));
 const t3Home = NodePath.join(home, "t3");
@@ -49,19 +52,19 @@ try {
       T3CODE_TELEMETRY_ENABLED: "false",
       T3CODE_DISABLE_AUTO_UPDATE: "true",
     },
-    timeout: STEP_TIMEOUT_MS,
+    timeout: stepTimeoutMs,
   });
   // A backend that never starts leaves no window, or only the "could not start" window, so the
   // thread wait below fails either way and its screenshot shows the startup error.
   step = "waiting for the first window";
-  const page = await app.firstWindow({ timeout: STEP_TIMEOUT_MS });
+  const page = await app.firstWindow({ timeout: stepTimeoutMs });
   try {
     step = `finding "${THREAD_TITLE}" in the sidebar`;
     const thread = page.locator("li[data-thread-item]", { hasText: THREAD_TITLE });
-    await thread.waitFor({ timeout: STEP_TIMEOUT_MS });
+    await thread.waitFor({ timeout: stepTimeoutMs });
     step = "opening the thread";
     await thread.click();
-    await page.getByText(THREAD_MESSAGE).waitFor({ timeout: STEP_TIMEOUT_MS });
+    await page.getByText(THREAD_MESSAGE).waitFor({ timeout: stepTimeoutMs });
   } catch (error) {
     NodeFS.mkdirSync(artifactsDir, { recursive: true });
     await page
