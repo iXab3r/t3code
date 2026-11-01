@@ -10,6 +10,8 @@ import {
   type ThreadSearchSubject,
 } from "@t3tools/shared/paletteSearch";
 import { threadSearchSubject } from "@t3tools/client-runtime/state/thread-search";
+import { searchKeyboardLayout } from "@t3tools/client-runtime/keyboardLayout";
+import type { SearchQueryVariant } from "@t3tools/shared/searchQueryVariants";
 import type { CommandPaletteLinkedThreads } from "../commandPaletteBus";
 import {
   addProjectRemoteSourceLabel,
@@ -488,7 +490,7 @@ function rankPaletteItem(
   item: PaletteItem,
   normalizedQuery: string,
   now: number,
-  options: { readonly typos: boolean },
+  options: { readonly typos: boolean; readonly historyQuery?: string },
 ): {
   readonly score: number;
   readonly quality: number;
@@ -509,7 +511,7 @@ function scorePaletteItem(
   item: PaletteItem,
   normalizedQuery: string,
   now: number,
-  options: { readonly typos: boolean },
+  options: { readonly typos: boolean; readonly historyQuery?: string },
 ) {
   if (item.threadSearch) return scoreThreadSearch(normalizedQuery, item.threadSearch, now, options);
   // The title names the item; search terms are keywords. Ranges index the
@@ -531,6 +533,7 @@ export function filterCommandPaletteGroups(input: {
   activeGroups: ReadonlyArray<CommandPaletteGroup>;
   query: string;
   isInSubmenu: boolean;
+  queryVariants?: ReadonlyArray<SearchQueryVariant>;
   /** Submenu options join the root search, and a submenu with no match falls back to it. */
   allOptions?: {
     readonly rootGroups: ReadonlyArray<CommandPaletteGroup>;
@@ -608,10 +611,37 @@ export function filterCommandPaletteGroups(input: {
   }
 
   const now = input.now ?? Date.now();
-  const ranked = rankSearchGroups(
-    searchableGroups.map((group) => ({ group, items: group.items })),
-    (item, options) => rankPaletteItem(item, normalizedQuery, now, options),
-  );
+  const queries = input.queryVariants ?? searchKeyboardLayout.getQueryVariants(searchQuery);
+  const rank = (query: string) => {
+    const normalized = foldSearchQuery(query);
+    return rankSearchGroups(
+      searchableGroups.map((group) => ({ group, items: group.items })),
+      (item, options) =>
+        rankPaletteItem(item, normalized, now, {
+          ...options,
+          historyQuery: normalizedQuery,
+        }),
+    );
+  };
+  const ranked = rank(queries[0]?.text ?? searchQuery);
+  if (queries.length > 1) {
+    const seen = new Set(ranked.flatMap(({ ranked }) => ranked.map(({ item }) => item.value)));
+    for (const query of queries.slice(1)) {
+      for (const result of rank(query.text)) {
+        const additional = result.ranked.filter(({ item }) => {
+          if (seen.has(item.value)) return false;
+          seen.add(item.value);
+          return true;
+        });
+        if (additional.length === 0) continue;
+        const index = ranked.findIndex(({ group }) => group.value === result.group.value);
+        const existing = ranked[index];
+        if (existing)
+          ranked[index] = { group: existing.group, ranked: [...existing.ranked, ...additional] };
+        else ranked.push({ group: result.group, ranked: additional });
+      }
+    }
+  }
   const threadsMatch = ranked.some(({ group }) => group.value === "threads-search");
   const groups = ranked.map(({ group, ranked }): CommandPaletteGroup => {
     // Secondary items stay below the rest; the sort is stable, so score order holds.

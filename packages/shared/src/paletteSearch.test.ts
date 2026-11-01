@@ -89,6 +89,14 @@ describe("scoreThreadSearch", () => {
       thread("Relay pairing", { activityAt: NOW }),
     ];
     expect(rankTitles("rel", threads)).toEqual(["Release checklist", "Relay pairing"]);
+    const layoutPick = thread("Release checklist", {
+      opens: { openedAt: NOW, score: 1, picks: [{ query: "куд", at: NOW }] },
+    });
+    expect(scoreThreadSearch("rel", layoutPick, NOW, { historyQuery: "куд" })).toMatchObject({
+      pickedAt: NOW,
+      pickedExactly: true,
+      ranges: [{ start: 0, end: 3 }],
+    });
     // A pick never lifts a match inside a word above a word match.
     expect(
       rankTitles("auth", [

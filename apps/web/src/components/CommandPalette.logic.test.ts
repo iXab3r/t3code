@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
 import type { Thread } from "../types";
 import { makeThreadFixture } from "../test-fixtures";
+import { createSearchKeyboardLayout } from "@t3tools/shared/searchQueryVariants";
 import {
   buildNestedSearchItems,
   buildThreadActionItems,
@@ -161,6 +162,80 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
 }
 
 describe("buildThreadActionItems", () => {
+  it("finds the same projects and thread contexts for typed уну as eye", () => {
+    const layout = createSearchKeyboardLayout();
+    layout.recordKey({ code: "KeyE", key: "у" });
+    layout.recordKey({ code: "KeyY", key: "н" });
+    const project = {
+      kind: "action" as const,
+      value: "project:eyeauras",
+      title: "New thread in EyeAuras",
+      searchTerms: ["EyeAuras"],
+      icon: null,
+      run: async () => undefined,
+    };
+    const threadSearchItems = buildThreadActionItems({
+      threads: [makeThread({ title: "Understand project goals" })],
+      projectByKey: new Map([
+        [`${LOCAL_ENVIRONMENT_ID}:${PROJECT_ID}`, { title: "EyeAuras.Luma" }],
+      ]),
+      icon: null,
+      runThread: async () => undefined,
+    });
+    const search = (query: string) =>
+      filterCommandPaletteGroups({
+        activeGroups: [],
+        query,
+        queryVariants: layout.getQueryVariants(query),
+        isInSubmenu: false,
+        projectSearchItems: [project],
+        threadSearchItems,
+      });
+    const names = (groups: ReturnType<typeof search>) =>
+      groups.map((group) => [group.value, group.items.map((item) => item.value)]);
+    expect(names(search("eye"))).toEqual([
+      ["projects-search", ["project:eyeauras"]],
+      ["threads-search", ["thread:environment-local:thread-1"]],
+    ]);
+    expect(names(search("уну"))).toEqual(names(search("eye")));
+    expect(search("уну")[1]?.items[0]?.matchHint?.text).toBe("EyeAuras.Luma");
+  });
+
+  it("keeps literal typo matches, groups, and secondary rows when merging readings", () => {
+    const action = (value: string, title: string, searchTerms: string[] = []) => ({
+      kind: "action" as const,
+      value,
+      title,
+      searchTerms,
+      icon: null,
+      run: async () => undefined,
+    });
+    const input = {
+      activeGroups: [{ value: "actions", label: "Actions", items: [action("command", "model")] }],
+      query: "ьщвуд",
+      queryVariants: [
+        { text: "ьщвуд", source: "original" as const },
+        { text: "model", source: "keyboard-layout" as const },
+      ],
+      isInSubmenu: false,
+      projectSearchItems: [
+        action("literal", "ьщву", ["model"]),
+        { ...action("secondary", "model"), secondary: true },
+        action("recovered", "model"),
+      ],
+      threadSearchItems: [],
+    };
+    const names = (groups: ReturnType<typeof filterCommandPaletteGroups>) =>
+      groups.map((group) => [group.value, group.items.map((item) => item.value)]);
+    expect(names(filterCommandPaletteGroups(input))).toEqual([
+      ["projects-search", ["literal", "recovered", "secondary"]],
+      ["actions", ["command"]],
+    ]);
+    expect(names(filterCommandPaletteGroups({ ...input, query: "> ьщвуд" }))).toEqual([
+      ["actions", ["command"]],
+    ]);
+  });
+
   it("keeps threads apart when two environments share a thread ID", async () => {
     const local = makeThread();
     const remote = makeThread({ environmentId: EnvironmentId.make("remote-copy") });
@@ -296,6 +371,21 @@ describe("buildThreadActionItems", () => {
       ["Threads", ["thread:environment-local:title"]],
       ["In messages", ["thread:environment-local:message"]],
     ]);
+    const recovered = filterCommandPaletteGroups({
+      activeGroups: [],
+      query: "сщтмуч",
+      queryVariants: [
+        { text: "сщтмуч", source: "original" },
+        { text: "convex", source: "keyboard-layout" },
+      ],
+      isInSubmenu: false,
+      projectSearchItems: [],
+      threadSearchItems: items,
+      threadMessageItems: [items[0]!, items[1]!].toReversed(),
+    });
+    expect(recovered.map((group) => [group.label, group.items.map((item) => item.value)])).toEqual(
+      after,
+    );
   });
 
   it("keeps an active thread first while its title is typed, above settings and actions", () => {

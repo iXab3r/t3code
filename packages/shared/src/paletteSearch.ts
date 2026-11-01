@@ -950,6 +950,7 @@ export function scoreThreadSearch(
      * sidebar filter or an agent's search.
      */
     readonly picks?: boolean;
+    readonly historyQuery?: string;
   },
 ): ThreadSearchMatch | null {
   const fields: WeightedSearchField[] = [{ value: thread.title, weight: 1, midWord: true }];
@@ -989,7 +990,8 @@ export function scoreThreadSearch(
         referenceMatch
           ? { label: "ID or link", text: normalizedQuery, ranges: [] }
           : (checkedHint ?? matchHint(fieldQuery, thread, typos));
-  const pick = options?.picks === false ? undefined : activePick(thread, normalizedQuery, now);
+  const historyQuery = options?.historyQuery ?? normalizedQuery;
+  const pick = options?.picks === false ? undefined : activePick(thread, historyQuery, now);
   return {
     score: match.quality * threadUsageBoost(thread, now),
     quality: match.quality,
@@ -1000,7 +1002,7 @@ export function scoreThreadSearch(
     ranges: match.primaryRanges,
     ...(explain ? { explain } : {}),
     ...(pick ? { pickedAt: pick.at } : {}),
-    ...(pick?.query === pickedQuery(normalizedQuery) ? { pickedExactly: true } : {}),
+    ...(pick?.query === pickedQuery(historyQuery) ? { pickedExactly: true } : {}),
   };
 }
 

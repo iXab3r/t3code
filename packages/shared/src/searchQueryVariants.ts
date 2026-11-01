@@ -32,7 +32,7 @@ type KeyboardLayoutKey = {
   readonly shiftKey?: boolean;
 };
 
-type SearchQueryVariant = {
+export type SearchQueryVariant = {
   readonly text: string;
   readonly source: "original" | "keyboard-layout";
 };
