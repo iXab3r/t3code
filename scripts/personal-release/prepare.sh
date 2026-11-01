@@ -15,6 +15,11 @@ export RUSTUP_TOOLCHAIN=1.96.1
 export PATH="$VP_HOME/bin:$CARGO_HOME/bin:$PATH"
 export CI=true
 
+if [[ "$phase" == linux-arm64 ]]; then
+  # QEMU misroutes V8's Wasm traps while Node strips TypeScript; use explicit bounds checks.
+  export NODE_OPTIONS="${NODE_OPTIONS:+$NODE_OPTIONS }--disable-wasm-trap-handler"
+fi
+
 node scripts/personal-release/run.mjs check-github
 
 apt-get update
