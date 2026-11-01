@@ -21,7 +21,7 @@ export async function writeManifest(directory, identity) {
   );
 }
 
-export async function verifyManifest(directory, revision, expectedVersion) {
+export async function verifyManifest(directory, revision, expectedVersion, requiredAssets = []) {
   const manifest = JSON.parse(
     await NodeFSP.readFile(NodePath.join(directory, "manifest.json"), "utf8"),
   );
@@ -35,6 +35,10 @@ export async function verifyManifest(directory, revision, expectedVersion) {
     throw new Error("Release artifacts belong to a different release version.");
   if (!manifest.files || Object.keys(manifest.files).length === 0)
     throw new Error("Empty release manifest.");
+  for (const suffix of requiredAssets) {
+    if (!Object.keys(manifest.files).some((name) => name.endsWith(suffix)))
+      throw new Error(`Missing release asset: ${suffix}`);
+  }
   for (const [name, digest] of Object.entries(manifest.files)) {
     if (NodePath.basename(name) !== name || name.includes("\\") || !/^[a-f0-9]{64}$/.test(digest)) {
       throw new Error(`Invalid manifest entry: ${name}`);

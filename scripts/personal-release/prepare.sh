@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+phase=prepare
+if [[ "${1:-}" == linux-arm64 ]]; then
+  phase=$1
+  shift
+fi
+
 export DEBIAN_FRONTEND=noninteractive
 export VP_HOME=/root/.vite-plus
 export CARGO_HOME=/root/.cargo
@@ -24,4 +30,4 @@ if ! command -v vp >/dev/null; then
   curl --location --fail --silent --show-error https://vite.plus -o /tmp/t3-vp.sh
   VP_VERSION=1.4.0 bash /tmp/t3-vp.sh
 fi
-vp env exec --node 26.12.1 --package-manager pnpm@12.14.0 node scripts/personal-release/run.mjs prepare "$@"
+vp env exec --node 26.12.1 --package-manager pnpm@12.14.0 node scripts/personal-release/run.mjs "$phase" "$@"

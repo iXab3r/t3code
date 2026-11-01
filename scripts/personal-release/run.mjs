@@ -75,55 +75,24 @@ function install() {
   ]);
 }
 
-const phase = process.argv[2];
-if (phase === "check-github") {
-  const token = process.env.GITHUB_TOKEN?.trim();
-  if (!token) throw new Error("Missing GitHub publication credential.");
-  const response = await fetch(`https://api.github.com/repos/${repository}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
-  });
-  if (!response.ok) throw new Error(`GitHub credential preflight failed: HTTP ${response.status}.`);
-  const info = await response.json();
-  if (!info.permissions?.push)
-    throw new Error("GitHub account has no push access to the personal repository.");
-  console.log(`GitHub credential preflight passed for ${repository}.`);
-} else if (phase === "prepare") {
-  if (process.platform !== "linux" || process.arch !== "x64")
-    throw new Error("Prepare requires Linux x64 (use an amd64 container on Mac).");
-  const counter = process.argv[3];
-  if (!/^[1-9]\d*$/.test(counter ?? "")) throw new Error("Pass the TeamCity build counter.");
-  const base = JSON.parse(await NodeFSP.readFile("apps/server/package.json", "utf8")).version.split(
-    "-",
-  )[0];
-  const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
-  const version = `${base}-nightly.${date}.${counter}`;
-  await resetOutput();
-  install();
-  vp(["test", "run", "--config", "../vite.config.ts", "personal-release/manifest.test.mjs"], {
-    cwd: NodePath.join(root, "scripts"),
-  });
-  node(["scripts/update-release-package-versions.ts", version]);
-  vp(["run", "build:desktop"]);
-  run(tar, [
-    "-czf",
-    NodePath.join(output, "js-bundle.tar.gz"),
-    "apps/server/dist",
-    "apps/desktop/dist-electron",
-  ]);
+async function buildLinux(version, arch) {
+  if (process.platform !== "linux" || process.arch !== arch)
+    throw new Error(`Linux ${arch} packaging requires a matching target environment.`);
+  const rustTarget = arch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu";
   node(["apps/server/scripts/cli.ts", "build-exe", "--verbose"]);
   run("cargo", [
     "build",
     "--locked",
     "--release",
     "--target",
-    "x86_64-unknown-linux-gnu",
+    rustTarget,
     "--manifest-path",
     "native/resource-monitor/Cargo.toml",
   ]);
-  const resourceDir = NodePath.join(output, "resource-monitor", "linux-x64");
+  const resourceDir = NodePath.join(output, "resource-monitor", `linux-${arch}`);
   await NodeFSP.mkdir(resourceDir, { recursive: true });
   await NodeFSP.cp(
-    "native/resource-monitor/target/x86_64-unknown-linux-gnu/release/t3-resource-monitor",
+    `native/resource-monitor/target/${rustTarget}/release/t3-resource-monitor`,
     NodePath.join(resourceDir, "t3-resource-monitor"),
   );
   node([
@@ -131,7 +100,7 @@ if (phase === "check-github") {
     "--platform",
     "linux",
     "--arch",
-    "x64",
+    arch,
     "--version",
     version,
     "--resource-monitor-dir",
@@ -139,7 +108,7 @@ if (phase === "check-github") {
     "--output-dir",
     output,
   ]);
-  const runtime = `t3-${version}-linux-x64.tar.gz`;
+  const runtime = `t3-${version}-linux-${arch}.tar.gz`;
   node([
     "scripts/smoke-cli-archive.ts",
     "--archive",
@@ -166,7 +135,7 @@ if (phase === "check-github") {
         "--target",
         "AppImage",
         "--arch",
-        "x64",
+        arch,
         "--build-version",
         version,
         "--skip-build",
@@ -215,16 +184,67 @@ if (phase === "check-github") {
         NodePath.join(diagnostics, "builder-debug.yml"),
       );
     }
+    if (arch === "arm64")
+      await NodeFSP.rename(NodePath.join(output, runtime), NodePath.join(linux, runtime));
     await writeManifest(linux, { version, revision, repository });
-    message("publishArtifacts", "ci-out/linux/* => linux");
+    message("publishArtifacts", `ci-out/linux/* => ${arch === "arm64" ? "linux-arm64" : "linux"}`);
   } finally {
     message("publishArtifacts", "ci-out/linux-launch-check/** => linux-launch-check");
     await NodeFSP.rm(temp, { recursive: true, force: true });
   }
+}
+
+const phase = process.argv[2];
+if (phase === "check-github") {
+  const token = process.env.GITHUB_TOKEN?.trim();
+  if (!token) throw new Error("Missing GitHub publication credential.");
+  const response = await fetch(`https://api.github.com/repos/${repository}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: "application/vnd.github+json" },
+  });
+  if (!response.ok) throw new Error(`GitHub credential preflight failed: HTTP ${response.status}.`);
+  const info = await response.json();
+  if (!info.permissions?.push)
+    throw new Error("GitHub account has no push access to the personal repository.");
+  console.log(`GitHub credential preflight passed for ${repository}.`);
+} else if (phase === "prepare") {
+  if (process.platform !== "linux" || process.arch !== "x64")
+    throw new Error("Prepare requires Linux x64 (use an amd64 container on Mac).");
+  const counter = process.argv[3];
+  if (!/^[1-9]\d*$/.test(counter ?? "")) throw new Error("Pass the TeamCity build counter.");
+  const base = JSON.parse(await NodeFSP.readFile("apps/server/package.json", "utf8")).version.split(
+    "-",
+  )[0];
+  const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");
+  const version = `${base}-nightly.${date}.${counter}`;
+  await resetOutput();
+  install();
+  vp(["test", "run", "--config", "../vite.config.ts", "personal-release/manifest.test.mjs"], {
+    cwd: NodePath.join(root, "scripts"),
+  });
+  node(["scripts/update-release-package-versions.ts", version]);
+  vp(["run", "build:desktop"]);
+  run(tar, [
+    "-czf",
+    NodePath.join(output, "js-bundle.tar.gz"),
+    "apps/server/dist",
+    "apps/desktop/dist-electron",
+  ]);
+  await buildLinux(version, "x64");
   await writeManifest(output, { version, revision, repository });
   message("buildNumber", version);
   message("publishArtifacts", "ci-out/*.tar.gz => prepare");
   message("publishArtifacts", "ci-out/manifest.json => prepare");
+} else if (phase === "linux-arm64") {
+  const manifest = await verifyManifest(NodePath.join(input, "prepare"), revision, undefined, [
+    "js-bundle.tar.gz",
+  ]);
+  const { version } = manifest;
+  await resetOutput();
+  install();
+  node(["scripts/update-release-package-versions.ts", version]);
+  run(tar, ["-xzf", NodePath.join(input, "prepare", "js-bundle.tar.gz"), "-C", root]);
+  await buildLinux(version, "arm64");
+  message("buildNumber", version);
 } else if (phase === "windows") {
   if (process.platform !== "win32" || process.arch !== "x64")
     throw new Error("Windows packaging requires a Windows x64 agent.");
@@ -342,41 +362,47 @@ if (phase === "check-github") {
     throw new Error("Unexpected packaging temporary directory.");
   await NodeFSP.rm(temp, { recursive: true, force: true });
 } else if (phase === "stage-release") {
-  const directory = NodePath.join(input, "windows");
-  const manifest = await verifyManifest(directory, revision);
-  const linuxDirectory = NodePath.join(input, "linux");
-  const linux = await verifyManifest(linuxDirectory, revision, manifest.version);
-  const linuxNames = Object.keys(linux.files);
-  if (!linuxNames.some((name) => name.endsWith(".AppImage")))
-    throw new Error("Missing Linux desktop AppImage.");
-  if (!linuxNames.some((name) => name.endsWith(".yml")))
-    throw new Error("Missing Linux desktop update metadata.");
-  if (linuxNames.some((name) => name in manifest.files))
-    throw new Error("Linux and Windows release assets have colliding names.");
-  const windowsNames = Object.keys(manifest.files);
-  const names = [...windowsNames, ...linuxNames];
-  for (const extension of [".exe", ".blockmap", ".yml", "-linux-x64.tar.gz"]) {
-    if (!windowsNames.some((name) => name.endsWith(extension)))
-      throw new Error(`Missing release asset: ${extension}`);
+  const sources = [
+    {
+      directory: "windows",
+      assets: [".exe", ".blockmap", "nightly.yml", "-linux-x64.tar.gz", "-win32-x64.zip"],
+    },
+    { directory: "linux", assets: ["-x86_64.AppImage", "-amd64.deb", "nightly-linux.yml"] },
+    {
+      directory: "linux-arm64",
+      assets: ["-arm64.AppImage", "-arm64.deb", "-linux-arm64.tar.gz", "nightly-linux-arm64.yml"],
+    },
+  ];
+  let version;
+  const files = new Map();
+  for (const source of sources) {
+    const directory = NodePath.join(input, source.directory);
+    const manifest = await verifyManifest(directory, revision, version, source.assets);
+    version ??= manifest.version;
+    for (const [name, digest] of Object.entries(manifest.files)) {
+      if (files.has(name)) throw new Error(`Release assets have colliding names: ${name}`);
+      files.set(name, { path: NodePath.join(directory, name), digest });
+    }
   }
   await resetOutput();
   const release = NodePath.join(output, "release");
-  await NodeFSP.cp(directory, release, { recursive: true });
-  for (const name of linuxNames)
-    await NodeFSP.copyFile(NodePath.join(linuxDirectory, name), NodePath.join(release, name));
-  await writeManifest(release, { version: manifest.version, revision, repository });
+  await NodeFSP.mkdir(release);
+  for (const [name, file] of files) await NodeFSP.copyFile(file.path, NodePath.join(release, name));
+  await writeManifest(release, { version, revision, repository });
   await NodeFSP.writeFile(
-    NodePath.join(output, "release", "SHA256SUMS"),
-    names
-      .sort()
-      .map((name) => `${manifest.files[name] ?? linux.files[name]}  ${name}\n`)
+    NodePath.join(release, "SHA256SUMS"),
+    [...files]
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([name, file]) => `${file.digest}  ${name}\n`)
       .join(""),
   );
-  message("buildNumber", manifest.version);
+  message("buildNumber", version);
   message("publishArtifacts", "ci-out/release/* => release");
   console.log(
-    `Validated Windows and Linux v${manifest.version} at ${revision}; release assets are staged.`,
+    `Validated Windows and Linux x64/ARM64 v${version} at ${revision}; release assets are staged.`,
   );
 } else {
-  throw new Error("Usage: run.mjs <check-github|prepare counter|windows|stage-release>");
+  throw new Error(
+    "Usage: run.mjs <check-github|prepare counter|linux-arm64|windows|stage-release>",
+  );
 }

@@ -27,6 +27,10 @@ it("release handoff rejects another revision and changed artifact bytes", async 
       verifyManifest(directory, identity.revision, "0.0.1-nightly.20261031.2"),
       /different release version/,
     );
+    await NodeAssert.rejects(
+      verifyManifest(directory, identity.revision, identity.version, ["-linux-arm64.tar.gz"]),
+      /Missing release asset/,
+    );
     await NodeFSP.writeFile(NodePath.join(directory, "bundle.tar.gz"), "changed");
     await NodeAssert.rejects(verifyManifest(directory, identity.revision), /checksum mismatch/);
   } finally {

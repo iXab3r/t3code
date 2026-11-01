@@ -7,7 +7,9 @@ import jetbrains.buildServer.configs.kotlin.vcs.GitVcsRoot
 version = "2025.07"
 
 object Toolchain {
-    const val NODE_IMAGE = "node:26.12.1-bookworm@sha256:3b764117159bda01d2396391e7789b6a9106af9729cfd001ef55e98557868310"
+    // Platform digests avoid Docker classic-store collisions between amd64 and arm64.
+    const val NODE_IMAGE = "node:26.12.1-bookworm@sha256:5feabe6cffeab0160ea9c8a29dd9f0bbf26b1028bbe40ed6dd80dbdfb5d99aa4"
+    const val ARM_NODE_IMAGE = "node:26.12.1-bookworm@sha256:86a29e21b0f756482c69a8ab23554ec4ef59062c950c6c7a7703b1f9f752c946"
 }
 
 project {
@@ -18,6 +20,7 @@ project {
         "Workflow: https://github.com/iXab3r/t3code/blob/main/docs/operations/personal-fork.md"
     vcsRoot(PersonalGit)
     buildType(Prepare)
+    buildType(LinuxArm64)
     buildType(Windows)
     buildType(Release)
 }
@@ -54,6 +57,51 @@ object Prepare : BuildType({
         }
     }
     requirements { equals("teamcity.agent.name", "Cvat") }
+    failureConditions { executionTimeoutMin = 90 }
+})
+
+object LinuxArm64 : BuildType({
+    id("LinuxArm64")
+    name = "Linux ARM64 / desktop and CLI"
+    vcs {
+        root(PersonalGit, "+:.\n-:.repos")
+        checkoutMode = CheckoutMode.ON_AGENT
+        // Native dependencies must not share the x64 node_modules tree.
+        checkoutDir = "t3-personal-linux-arm64"
+    }
+    steps {
+        script {
+            name = "Verify ARM64 container execution"
+            scriptContent = "bash scripts/personal-release/ensure-arm64.sh ${Toolchain.ARM_NODE_IMAGE}"
+        }
+        script {
+            name = "Package and launch-check Linux ARM64"
+            scriptContent = """
+                #!/usr/bin/env bash
+                mkdir -p release
+                set +e
+                bash scripts/personal-release/prepare.sh linux-arm64 2>&1 | tee release/arm64.log
+                result=${'$'}{PIPESTATUS[0]}
+                echo "##teamcity[publishArtifacts 'release/arm64.log => diagnostics']"
+                exit "${'$'}result"
+            """.trimIndent()
+            param("plugin.docker.imageId", Toolchain.ARM_NODE_IMAGE)
+            param("plugin.docker.imagePlatform", "linux")
+            param("plugin.docker.run.parameters", "--user 0 --init --platform linux/arm64 --volume t3-personal-vite-arm64:/root/.vite-plus --volume t3-personal-cargo-arm64:/root/.cargo --volume t3-personal-rustup-arm64:/root/.rustup")
+        }
+    }
+    requirements { equals("teamcity.agent.name", "Cvat") }
+    dependencies {
+        snapshot(Prepare) {
+            onDependencyFailure = FailureAction.CANCEL
+            onDependencyCancel = FailureAction.CANCEL
+        }
+        artifacts(Prepare) {
+            buildRule = sameChainOrLastFinished()
+            artifactRules = "prepare/** => ci-input/prepare"
+            cleanDestination = true
+        }
+    }
     failureConditions { executionTimeoutMin = 90 }
 })
 
@@ -109,6 +157,10 @@ object Release : BuildType({
     }
     requirements { equals("teamcity.agent.name", "Cvat") }
     dependencies {
+        snapshot(LinuxArm64) {
+            onDependencyFailure = FailureAction.CANCEL
+            onDependencyCancel = FailureAction.CANCEL
+        }
         snapshot(Windows) {
             onDependencyFailure = FailureAction.CANCEL
             onDependencyCancel = FailureAction.CANCEL
@@ -121,6 +173,11 @@ object Release : BuildType({
         artifacts(Prepare) {
             buildRule = sameChainOrLastFinished()
             artifactRules = "linux/** => ci-input/linux"
+            cleanDestination = true
+        }
+        artifacts(LinuxArm64) {
+            buildRule = sameChainOrLastFinished()
+            artifactRules = "linux-arm64/** => ci-input/linux-arm64"
             cleanDestination = true
         }
     }
