@@ -67,6 +67,12 @@ is passed only to build scripts and is absent from packaged runtime launch check
 Both CLI and desktop launch checks execute in the target ARM64 environment.
 ARM64 checks allow up to three minutes for startup and desktop interactions under
 CPU emulation; native x64 checks retain their usual limits.
+For extraction under QEMU, CI clears the AppImage ELF padding marker in a temporary
+copy to match binfmt's ELF mask. Published AppImages and the extracted application
+are unchanged.
+The emulated desktop check runs as the container's `node` user, disables short V8
+builtin calls, and runs the backend without JIT through a temporary QEMU launcher.
+These settings apply only to the launch check, not to published packages.
 
 Versioned TeamCity settings synchronize from `.teamcity` on `main`. Builds use
 current TeamCity settings (`alwaysUseCurrent`) so inherited authorization is not

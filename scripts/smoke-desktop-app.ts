@@ -20,6 +20,7 @@ const { values } = NodeUtil.parseArgs({
     executable: { type: "string" },
     "artifacts-dir": { type: "string" },
     "step-timeout-seconds": { type: "string", default: "60" },
+    "electron-arg": { type: "string", multiple: true },
   },
 });
 const executable = values.executable;
@@ -37,11 +38,12 @@ NodeFS.copyFileSync(FIXTURE_DB, NodePath.join(t3Home, "userdata/statev2.sqlite")
 
 let step = "launching the app";
 let app: ElectronApplication | undefined;
+let child: ReturnType<ElectronApplication["process"]> | undefined;
 try {
   app = await _electron.launch({
     executablePath: executable,
     // Linux CI runners do not allow the Chromium sandbox's user namespaces.
-    args: ["--no-sandbox"],
+    args: ["--no-sandbox", ...(values["electron-arg"] ?? [])],
     // HOME stays real: on macOS a fake HOME has no login keychain, and safeStorage blocks the
     // main process on a keychain dialog. macOS keeps its Electron profile in the runner's HOME.
     env: {
@@ -54,6 +56,7 @@ try {
     },
     timeout: stepTimeoutMs,
   });
+  child = app.process();
   // A backend that never starts leaves no window, or only the "could not start" window, so the
   // thread wait below fails either way and its screenshot shows the startup error.
   step = "waiting for the first window";
@@ -90,11 +93,9 @@ try {
 } finally {
   if (app) {
     // A hung app never finishes closing; kill it so the job does not wait for its timeout.
-    // Playwright drops the process handle once the app closes, so read it first.
-    const child = app.process();
     const closed = app.close().catch(() => {});
     await Promise.race([closed, NodeTimersPromises.setTimeout(10_000, undefined, { ref: false })]);
-    child.kill("SIGKILL");
+    child?.kill("SIGKILL");
   }
   NodeFS.rmSync(home, { recursive: true, force: true, maxRetries: 5 });
 }

@@ -163,7 +163,27 @@ async function buildLinux(version, arch) {
     if (appImages.length !== 1) throw new Error("Expected exactly one Linux AppImage.");
     const appImage = NodePath.join(linux, appImages[0]);
     await NodeFSP.chmod(appImage, 0o755);
-    run(appImage, ["--appimage-extract"], { cwd: temp, stdio: ["ignore", "ignore", "inherit"] });
+    let extractionImage = appImage;
+    if (arch === "arm64") {
+      // QEMU's binfmt mask rejects AppImage's ELF padding marker; change only an extraction copy.
+      extractionImage = NodePath.join(temp, "extract.AppImage");
+      await NodeFSP.copyFile(appImage, extractionImage);
+      await NodeFSP.chmod(extractionImage, 0o755);
+      const handle = await NodeFSP.open(extractionImage, "r+");
+      try {
+        const marker = Buffer.alloc(3);
+        await handle.read(marker, 0, marker.length, 8);
+        if (!marker.equals(Buffer.from([0x41, 0x49, 0x02])))
+          throw new Error("Unexpected AppImage ELF marker.");
+        await handle.write(Buffer.alloc(3), 0, 3, 8);
+      } finally {
+        await handle.close();
+      }
+    }
+    run(extractionImage, ["--appimage-extract"], {
+      cwd: temp,
+      stdio: ["ignore", "ignore", "inherit"],
+    });
     const extracted = NodePath.join(temp, "squashfs-root");
     const feed = await NodeFSP.readFile(
       NodePath.join(extracted, "resources", "app-update.yml"),
@@ -172,20 +192,46 @@ async function buildLinux(version, arch) {
     if (!/^owner:\s*iXab3r\s*$/m.test(feed) || !/^repo:\s*t3code\s*$/m.test(feed))
       throw new Error("Linux updater points outside the personal fork.");
     await NodeFSP.writeFile(NodePath.join(diagnostics, "app-update.yml"), feed);
-    run("dbus-run-session", [
+    let executable = NodePath.join(extracted, "t3code");
+    if (arch === "arm64") {
+      // Packaged Electron filters NODE_OPTIONS; QEMU must reapply it to the backend process.
+      executable = NodePath.join(temp, "launch.sh");
+      await NodeFSP.writeFile(
+        executable,
+        '#!/bin/sh\nexport QEMU_SET_ENV=NODE_OPTIONS=--jitless\nexec "$(dirname "$0")/squashfs-root/t3code" "$@"\n',
+        { mode: 0o755 },
+      );
+      // Electron's sandboxed renderer rejects root under QEMU even with --no-sandbox.
+      await NodeFSP.chmod(temp, 0o755);
+      await NodeFSP.chown(
+        diagnostics,
+        Number(capture("id", ["-u", "node"])),
+        Number(capture("id", ["-g", "node"])),
+      );
+    }
+    const smokeArgs = [
       "--",
       "xvfb-run",
       "-a",
-      process.execPath,
+      arch === "arm64" ? "/usr/local/bin/node" : process.execPath,
       ...nodeArgs([
         "scripts/smoke-desktop-app.ts",
         "--executable",
-        NodePath.join(extracted, "t3code"),
+        executable,
         "--artifacts-dir",
         diagnostics,
-        ...(arch === "arm64" ? ["--step-timeout-seconds", "180"] : []),
+        ...(arch === "arm64"
+          ? [
+              "--step-timeout-seconds",
+              "180",
+              "--electron-arg=--no-zygote",
+              "--electron-arg=--js-flags=--no-short-builtin-calls",
+            ]
+          : []),
       ]),
-    ]);
+    ];
+    if (arch === "arm64") run("runuser", ["-u", "node", "--", "dbus-run-session", ...smokeArgs]);
+    else run("dbus-run-session", smokeArgs);
     if (assets.includes("builder-debug.yml")) {
       await NodeFSP.rename(
         NodePath.join(linux, "builder-debug.yml"),
