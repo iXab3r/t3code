@@ -1,5 +1,8 @@
 # Install T3 Code
 
+For **Personal Edition by Xab3r**, use the [fork installation instructions](../../README.md#installation).
+The `t3.codes`, npm, and package-manager instructions below install upstream T3 Code.
+
 T3 Code runs coding agents on your computer and lets you control them from its
 desktop, web, or mobile app. Set up the machine where the agents will work first.
 

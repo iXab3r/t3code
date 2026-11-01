@@ -4,10 +4,11 @@
 
 This checkout belongs to `iXab3r/t3code`. Read [the fork workflow](docs/operations/personal-fork.md) before choosing a base or PR target.
 
-- `main` tracks upstream and contains only upstream changes or focused changes intended for upstream PRs. Never put personal branding, release infrastructure, or other private customizations on `main`.
-- Base personal work on `origin/personal` and target `personal`, including personal UI and TeamCity changes. Never merge `personal` into `main`.
-- PRs targeting our `main` are only for upstream contributions. Keep their branches free of personal commits and check the diff against `upstream/main` before opening an upstream PR.
-- Periodically merge updated `main` into `personal` to retain personal changes while following upstream.
+- `main` is this fork's integration, default, and release branch. Base personal work on `origin/main` and target our `main`, including branding and TeamCity changes.
+- `upstream` is a clean mirror of `pingdotgg/t3code:main`. Update it only from the `upstream/main` remote-tracking ref; never merge fork commits or contribution candidates into it.
+- Base upstream contribution branches on `origin/upstream` or `upstream/main`, never on our `main`. Review their diff against `upstream/main` before opening an upstream PR. A review PR in our repository may target `upstream`, but must not be merged there before the change lands upstream.
+- Periodically merge `origin/upstream` into our `main`, preserving personal changes. `personal` is a legacy branch, not a base or PR target for new work.
+- Keep the README's **What this fork changes** list current when adding, changing, or removing user-visible fork features. Include installation or usage changes when they affect users; list shipped features, not plans or open PRs.
 
 T3 Code is a minimal GUI for coding agents. A Node WebSocket server wraps provider CLIs and agents (Codex, Claude Code, Cursor, Grok, OpenCode, Antigravity) and serves web, desktop, and mobile clients.
 

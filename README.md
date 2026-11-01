@@ -1,104 +1,118 @@
-# T3 Code
+# T3 Code — Personal Edition by Xab3r
 
-T3 Code is an "agent harness control surface". It enables control of the agents on your machine with a best-in-class mobile app ([iOS](https://apps.apple.com/us/app/t3-code-remote-claude-more/id6787819824), [Android](https://play.google.com/store/apps/details?id=com.t3tools.t3code)), [web app](https://app.t3.codes) and [Electron-based desktop app](https://t3.codes).
+This is [Xab3r's personal fork](https://github.com/iXab3r/t3code) of
+[T3 Code by pingdotgg](https://github.com/pingdotgg/t3code). It keeps the upstream
+coding-agent workspace and adds the personal changes listed below. This is an
+independent distribution with its own releases and update feed.
 
-Works with your subscriptions on Claude Code, Codex, Cursor, Grok Build, OpenCode, and Google Antigravity. If they're set up on your computer, T3 Code can control them.
+T3 Code runs agents on your machine and lets you control them from a desktop,
+web, or mobile client. It works with your subscriptions and authenticated
+Codex, Claude Code, Cursor, Grok Build, OpenCode, and Antigravity providers.
 
-## "Wait, what are you selling me?"
+## What this fork changes
 
-Nothing. We built T3 Code because we wanted the best possible development experience with agents. We were inspired by existing solutions like the Codex desktop app, Conductor, Claude Desktop and Cursor Glass, but none met our bar.
+- **Unread completion badges persist.** Background thread completions stay marked
+  until you view the corresponding threads, so finishing work is easier to find.
+- **Visible fork identity.** The app header shows `personal edition by Xab3r`
+  with a link to this repository.
+- **A separate release and update feed.** Personal desktop and standalone CLI
+  builds update from this repository's nightly releases.
+- **Matching Windows and WSL builds.** TeamCity packages the Windows desktop
+  together with a Linux x64 WSL runtime built from the same source revision.
 
-We wanted something performant, remote-ready, and truly open. If we ever go the wrong direction, we want you to have everything you need to fork and build the editor that you want.
+This list describes shipped differences. Keep it current when a fork feature is
+added, changed, or removed; see the [fork workflow](docs/operations/personal-fork.md).
 
 ## Installation
 
-> [!WARNING]
-> T3 Code currently supports Codex, Claude, Cursor, Grok Build, OpenCode, and Antigravity. Install and authenticate at least one provider before use:
->
-> - Codex: install [Codex CLI](https://developers.openai.com/codex/cli) and run `codex login`
-> - Claude: install [Claude Code](https://claude.com/product/claude-code) and run `claude auth login`
-> - Cursor: install [Cursor CLI](https://cursor.com/cli) and run `agent login`
-> - Grok Build: install [Grok Build CLI](https://x.ai/cli) and run `grok login`
-> - OpenCode: install [OpenCode](https://opencode.ai) and run `opencode auth login`
-> - Antigravity: enable it in Settings, then use **Install Antigravity** and **Sign in with Google**. No CLI is required.
+Download the newest published nightly from
+[this fork's releases](https://github.com/iXab3r/t3code/releases). Releases are
+marked as prereleases, so use the releases list to find the newest one.
 
-### Command line
+| Platform                            | Personal build                                                                                     |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Windows x64                         | `T3-Code-<version>-x64.exe` desktop installer, or `t3-<version>-win32-x64.zip` standalone CLI      |
+| Linux x64, including Nobara and WSL | `t3-<version>-linux-x64.tar.gz` standalone CLI/runtime                                             |
+| macOS                               | Personal packages are not published yet; packaging will be added when the Mac build agent is ready |
 
-```bash
-curl -fsSL https://t3.codes/install.sh | sh
-```
+### Windows desktop
 
-On Windows, in PowerShell:
+1. Download and run the `.exe` installer from a personal release.
+2. Open T3 Code. The header identifies it as `personal edition by Xab3r`.
+3. Install and authenticate at least one supported provider on the machine where
+   agents will run, then select it in T3 Code.
+4. Open your project folder, create a thread, and send a prompt.
+
+To use the bundled `t3` command in a terminal, open **Settings → About → t3 command**.
+To connect another device, open **Settings → Sharing & access** on the host and
+follow the [remote access guide](docs/user/remote-access.md). Keep the host running.
+The official upstream mobile app can connect to this server; this fork does not
+currently publish its own mobile clients.
+
+### Standalone CLI on Windows or Linux
+
+Extract the matching CLI archive into its own folder and keep all its contents
+together, including `client`, `resource-monitor`, and any bundled libraries.
+Open a terminal in the extracted `t3-<version>-<platform>` folder.
+
+On Windows:
 
 ```powershell
-irm https://t3.codes/install.ps1 | iex
+.\t3.exe --help
+.\t3.exe serve
 ```
 
-Then run `t3` to start the server and open the local web app. `t3 service install` keeps it running in the background, `t3 update` moves to a newer release, and `t3 --help` has the full reference.
+On Linux:
 
-To try it once without installing, run `npx t3@latest` instead.
-
-### Desktop app
-
-Install the latest version of the desktop app from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), or from your favorite package registry:
-
-#### Windows (`winget`)
-
-```bash
-winget install T3Tools.T3Code
+```sh
+./t3 --help
+./t3 serve
 ```
 
-#### Windows (`scoop`)
+Open the browser/pairing URL printed by the command. Authenticate a provider on
+that host before starting an agent thread. Add the extracted folder to your
+`PATH` if you want to run `t3` from elsewhere. See
+[remote access](docs/user/remote-access.md) for `t3 up` and multi-device use.
 
-```bash
-scoop install extras/t3code
+### Upstream installation methods
+
+`npx t3`, the installers at `t3.codes`, and the upstream winget, Scoop, Homebrew,
+AUR, and Nix packages install upstream T3 Code. To get this personal edition,
+use the release assets above or build this repository from source.
+
+## Updating
+
+The personal desktop app uses its built-in updater to download this fork's
+nightly releases. Follow the update prompt, or install a newer personal `.exe`
+manually from the releases page.
+
+For the standalone CLI, run from its extracted folder:
+
+```powershell
+# Windows
+.\t3.exe update --channel nightly
 ```
 
-#### macOS (Homebrew)
-
-```bash
-brew install --cask t3-code
+```sh
+# Linux
+./t3 update --channel nightly
 ```
 
-#### Debian, Ubuntu (`.deb`)
+If `t3` is on your `PATH`, use `t3 update --channel nightly`. Desktop builds
+and CLI/runtime archives in a release share the same version and source revision.
 
-Download the `.deb` from [GitHub Releases](https://github.com/pingdotgg/t3code/releases), then:
+## Branches and contributions
 
-```bash
-sudo apt install ./T3-Code-*.deb
-```
+- **`main`** is this fork's default branch, including personal changes. Fork PRs
+  target `main`, and TeamCity publishes personal builds from this branch.
+- **`upstream`** is a clean mirror of `pingdotgg/t3code:main`. Start upstream
+  contribution branches here, keeping them free of personal patches.
+- Periodically merge `upstream` into our `main` to bring in upstream changes.
+- **`personal`** is a legacy branch retained for the migration; do not use it
+  for new work or PRs.
 
-#### Arch Linux (AUR)
-
-Stable:
-
-```bash
-yay -S t3code-bin
-```
-
-Nightly:
-
-```bash
-yay -S t3code-nightly-bin
-```
-
-The AUR packaging is maintained in this repository under [`packaging/aur`](./packaging/aur).
-
-#### Nix (nixpkgs)
-
-```bash
-nix profile add github:NixOS/nixpkgs/nixos-unstable#t3code
-```
-
-The package is maintained in [nixpkgs](https://github.com/NixOS/nixpkgs/tree/nixos-unstable/pkgs/by-name/t3/t3code)
-and includes the desktop app (`t3code-desktop`) and the `t3` command.
-See [Nix installation](./docs/user/install.md#nix-nixpkgs) for NixOS configuration and updates.
-
-## Some notes
-
-We are very very early in this project. Expect bugs.
-
-We are (mostly) not accepting contributions yet. Small fixes may be considered. Big features will not be.
+See [the fork workflow](docs/operations/personal-fork.md) for synchronization and
+upstream contribution rules.
 
 ## Documentation
 
@@ -119,7 +133,7 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 
 Building from source? Start at [docs/internals/overview.md](./docs/internals/overview.md).
 
-## If you REALLY want to contribute still.... read this first
+## Building from source
 
 ### Install `vp`
 
@@ -139,14 +153,22 @@ irm https://vite.plus/ps1 | iex
 
 Checkout their getting started guide for more information: https://viteplus.dev/guide/
 
+### Clone and run this fork
+
+```sh
+git clone --branch main https://github.com/iXab3r/t3code.git
+cd t3code
+```
+
 ### Install dependencies
 
 ```bash
 vp i
+vp run dev
 ```
 
 Read [CONTRIBUTING.md](./CONTRIBUTING.md) before reporting a bug or opening a PR.
 
-Have a feature request? Start an [Ideas discussion](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
+For fork-specific bugs and suggestions, use [our issues](https://github.com/iXab3r/t3code/issues). Upstream proposals belong in [upstream Ideas discussions](https://github.com/pingdotgg/t3code/discussions/categories/ideas).
 
-Need support? Join the [Discord](https://discord.gg/jn4EGJjrvv).
+The upstream [Discord](https://discord.gg/jn4EGJjrvv) supports upstream T3 Code; report personal-edition issues in this fork.

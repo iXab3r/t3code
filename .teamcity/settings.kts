@@ -12,9 +12,10 @@ object Toolchain {
 
 project {
     description = "Personal Edition by Xab3r: https://github.com/iXab3r/t3code. " +
-        "Releases build personal only. main tracks upstream; PRs into main are only for upstream contributions. " +
-        "All personal changes target personal. Periodically merge main into personal; never personal into main. " +
-        "Workflow: https://github.com/iXab3r/t3code/blob/personal/docs/operations/personal-fork.md"
+        "Releases build main only. main is the fork integration branch; upstream mirrors pingdotgg/t3code:main. " +
+        "Fork PRs target main. Upstream contributions start from upstream, without fork patches. " +
+        "Periodically merge upstream into main; never main into upstream. personal is legacy. " +
+        "Workflow: https://github.com/iXab3r/t3code/blob/main/docs/operations/personal-fork.md"
     vcsRoot(PersonalGit)
     buildType(Prepare)
     buildType(Windows)
@@ -25,7 +26,7 @@ object PersonalGit : GitVcsRoot({
     id("Git")
     name = "T3 personal integration"
     url = "https://github.com/iXab3r/t3code.git"
-    branch = "refs/heads/personal"
+    branch = "refs/heads/main"
 })
 
 object Prepare : BuildType({

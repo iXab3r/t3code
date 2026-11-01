@@ -1,5 +1,8 @@
 # Updating T3 Code
 
+Personal Edition by Xab3r follows [the fork's nightly releases](https://github.com/iXab3r/t3code/releases).
+See [fork updates](../../README.md#updating) for desktop and standalone CLI instructions.
+
 The app you use and the server running your agents can be on different machines.
 When a server is behind your web or desktop app, the update button at the bottom
 of the sidebar and **Settings → Environments** offer to update it.
