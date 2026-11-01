@@ -53,6 +53,9 @@ describe("createSearchKeyboardLayout", () => {
     ["і", ["KeyS"], "s"],
     ["İ", ["KeyI"], "I"],
     ["λ", ["Semicolon"], ";"],
+    [".", ["Slash"], "/"],
+    ["é", ["Digit2"], "2"],
+    ["١٢", ["Digit1", "Digit2"], "12"],
   ] as const)("learns %s from physical keys", (query, codes, recovered) => {
     const layout = createSearchKeyboardLayout();
     Array.from(query).forEach((key, index) => layout.recordKey({ key, code: codes[index]! }));
@@ -60,6 +63,9 @@ describe("createSearchKeyboardLayout", () => {
       { text: query, source: "original" },
       { text: recovered, source: "keyboard-layout" },
     ]);
+    Array.from(query.toUpperCase()).forEach((key, index) =>
+      layout.recordKey({ key, code: codes[index]! }),
+    );
     expect(layout.getQueryVariants(query.toUpperCase())).toEqual([
       { text: query.toUpperCase(), source: "original" },
       {
@@ -74,6 +80,10 @@ describe("createSearchKeyboardLayout", () => {
     layout.recordKey({ code: "KeyY", key: "z" });
     layout.recordKey({ code: "KeyZ", key: "z" });
     layout.recordKey({ code: "KeyA", key: "α" });
+    expect(layout.getQueryVariants("Α")).toEqual([
+      { text: "Α", source: "original" },
+      { text: "A", source: "keyboard-layout" },
+    ]);
     expect(layout.getQueryVariants("zα")).toEqual([
       { text: "zα", source: "original" },
       { text: "ya", source: "keyboard-layout" },
@@ -88,6 +98,31 @@ describe("createSearchKeyboardLayout", () => {
     expect(createSearchKeyboardLayout().getQueryVariants("α")).toEqual([
       { text: "α", source: "original" },
     ]);
+    layout.recordKey({ code: "Slash", key: "." });
+    layout.recordKey({ code: "Period", key: "." });
+    expect(layout.getQueryVariants(".")).toEqual([
+      { text: ".", source: "original" },
+      { text: "/", source: "keyboard-layout" },
+    ]);
+  });
+
+  it("keeps shifted symbols distinct without relearning ordinary US Shift input", () => {
+    const layout = createSearchKeyboardLayout();
+    layout.recordKey({ code: "Semicolon", key: "ж" });
+    layout.recordKey({ code: "Semicolon", key: "Ж", shiftKey: true });
+    expect(layout.getQueryVariants("жЖ")).toEqual([
+      { text: "жЖ", source: "original" },
+      { text: ";:", source: "keyboard-layout" },
+    ]);
+    layout.recordKey({ code: "Slash", key: "?", shiftKey: true });
+    layout.recordKey({ code: "Digit2", key: "@", shiftKey: true });
+    expect(layout.getQueryVariants("?@")).toEqual([{ text: "?@", source: "original" }]);
+    layout.recordKey({ code: "Digit2", key: "2", shiftKey: true });
+    layout.recordKey({ code: "KeyQ", key: "@", shiftKey: true });
+    expect(layout.getQueryVariants("2@")).toEqual([
+      { text: "2@", source: "original" },
+      { text: "@Q", source: "keyboard-layout" },
+    ]);
   });
 
   it.each([
@@ -98,6 +133,9 @@ describe("createSearchKeyboardLayout", () => {
     { code: "Unidentified" },
     { key: "Dead" },
     { key: "αβ" },
+    { key: " " },
+    { key: "\n" },
+    { key: "\u0000" },
   ])("ignores unusable or modified key events %j", (overrides) => {
     const layout = createSearchKeyboardLayout();
     layout.recordKey({ code: "KeyA", key: "α", ...overrides });

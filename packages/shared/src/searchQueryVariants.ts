@@ -1,15 +1,25 @@
-const US_PUNCTUATION_KEYS = new Map([
-  ["Backquote", "`"],
-  ["Minus", "-"],
-  ["Equal", "="],
-  ["BracketLeft", "["],
-  ["BracketRight", "]"],
-  ["Backslash", "\\"],
-  ["Semicolon", ";"],
-  ["Quote", "'"],
-  ["Comma", ","],
-  ["Period", "."],
-  ["Slash", "/"],
+const US_SYMBOL_KEYS = new Map([
+  ["Backquote", "`~"],
+  ["Minus", "-_"],
+  ["Equal", "=+"],
+  ["BracketLeft", "[{"],
+  ["BracketRight", "]}"],
+  ["Backslash", "\\|"],
+  ["Semicolon", ";:"],
+  ["Quote", "'\""],
+  ["Comma", ",<"],
+  ["Period", ".>"],
+  ["Slash", "/?"],
+  ["Digit0", "0)"],
+  ["Digit1", "1!"],
+  ["Digit2", "2@"],
+  ["Digit3", "3#"],
+  ["Digit4", "4$"],
+  ["Digit5", "5%"],
+  ["Digit6", "6^"],
+  ["Digit7", "7&"],
+  ["Digit8", "8*"],
+  ["Digit9", "9("],
 ]);
 
 type KeyboardLayoutKey = {
@@ -19,6 +29,7 @@ type KeyboardLayoutKey = {
   readonly ctrlKey?: boolean;
   readonly metaKey?: boolean;
   readonly altKey?: boolean;
+  readonly shiftKey?: boolean;
 };
 
 type SearchQueryVariant = {
@@ -66,18 +77,29 @@ export function createSearchKeyboardLayout() {
   return {
     recordKey(event: KeyboardLayoutKey) {
       if (event.isComposing || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (!/^\p{L}$/u.test(event.key)) return;
-      const ascii = /^Key[A-Z]$/.test(event.code)
-        ? event.code.slice(3).toLowerCase()
-        : US_PUNCTUATION_KEYS.get(event.code);
+      if (!/^[\p{L}\p{N}\p{P}\p{S}]$/u.test(event.key)) return;
+      const letterCode = /^Key([A-Z])$/.exec(event.code)?.[1];
+      const isLetter = /^\p{L}$/u.test(event.key);
+      const ascii = letterCode
+        ? event.shiftKey && !isLetter
+          ? letterCode
+          : letterCode.toLowerCase()
+        : US_SYMBOL_KEYS.get(event.code)?.[event.shiftKey ? 1 : 0];
       if (!ascii || event.key.toLowerCase() === ascii) return;
 
-      const lower = event.key.toLowerCase();
-      const upper = event.key.toUpperCase();
-      learned.set(event.key, upper !== lower && event.key === upper ? ascii.toUpperCase() : ascii);
-      if (Array.from(lower).length === 1) learned.set(lower, ascii);
-      if (upper !== lower && Array.from(upper).length === 1)
-        learned.set(upper, ascii.toUpperCase());
+      if (letterCode && isLetter) {
+        const lower = event.key.toLowerCase();
+        const upper = event.key.toUpperCase();
+        learned.set(
+          event.key,
+          upper !== lower && event.key === upper ? ascii.toUpperCase() : ascii,
+        );
+        if (Array.from(lower).length === 1) learned.set(lower, ascii);
+        if (upper !== lower && Array.from(upper).length === 1)
+          learned.set(upper, ascii.toUpperCase());
+      } else {
+        learned.set(event.key, ascii);
+      }
     },
     getQueryVariants(query: string) {
       return getSearchQueryVariants(query, layouts);
