@@ -33,11 +33,11 @@ marked as prereleases, so use the releases list to find the newest one.
 For fx, install [fx](https://fx.sh), run `fx login` on the server's machine, and
 follow the [fx setup guide](docs/user/providers-fx.md).
 
-| Platform                            | Personal build                                                                                          |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Windows x64                         | `T3-Code-<version>-x64.exe` desktop installer, or `t3-<version>-win32-x64.zip` standalone CLI           |
-| Linux x64, including Nobara and WSL | `T3-Code-<version>-x64.AppImage` desktop app, or `t3-<version>-linux-x64.tar.gz` standalone CLI/runtime |
-| macOS                               | Personal packages are not published yet; packaging will be added when the Mac build agent is ready      |
+| Platform                            | Personal build                                                                                             |
+| ----------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Windows x64                         | `T3-Code-<version>-x64.exe` desktop installer, or `t3-<version>-win32-x64.zip` standalone CLI              |
+| Linux x64, including Nobara and WSL | `T3-Code-<version>-x86_64.AppImage` desktop app, or `t3-<version>-linux-x64.tar.gz` standalone CLI/runtime |
+| macOS                               | Personal packages are not published yet; packaging will be added when the Mac build agent is ready         |
 
 ### Windows desktop
 
@@ -65,6 +65,7 @@ chmod +x ./T3-Code-*.AppImage
 
 Authenticate a provider on that machine, open a project, and create a thread as
 on Windows. The `.tar.gz` asset is the standalone CLI/WSL runtime, not the desktop app.
+Debian and Ubuntu users can also install the release's `T3-Code-<version>-amd64.deb` package.
 
 ### Standalone CLI on Windows or Linux
 

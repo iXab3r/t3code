@@ -124,6 +124,13 @@ object Release : BuildType({
             cleanDestination = true
         }
     }
-    triggers { vcs { branchFilter = "+:<default>"; quietPeriodMode = VcsTrigger.QuietPeriodMode.USE_CUSTOM; quietPeriod = 60 } }
+    triggers {
+        vcs {
+            branchFilter = "+:<default>"
+            triggerRules = "-:README.md\n-:AGENTS.md\n-:docs/operations/**\n-:.teamcity/**"
+            quietPeriodMode = VcsTrigger.QuietPeriodMode.USE_CUSTOM
+            quietPeriod = 60
+        }
+    }
     failureConditions { executionTimeoutMin = 15 }
 })

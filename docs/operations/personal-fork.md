@@ -41,6 +41,9 @@ git merge origin/upstream
 [T3 Personal in TeamCity](https://build.eyeauras.net/project/T3Personal) uses
 `T3Personal_Git`, whose default branch is `refs/heads/main`. The release trigger
 is restricted to that default branch. `upstream` does not publish releases.
+README, root agent guidance, operations docs, and TeamCity-only changes do not
+trigger another binary release. Versioned settings still synchronize normally;
+changes to application code, build scripts, and shipped user docs still trigger builds.
 
 The chain prepares the shared bundle, Linux x64 AppImage and WSL runtime, packages
 and checks Windows x64 in an interactive user session, then validates and publishes
