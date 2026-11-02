@@ -85,6 +85,11 @@ export function startThreadNotifications(
   const unread = new Map<string, string>();
   const watched = new Map<EnvironmentId, WatchedEnvironment>();
   let badgeCount: number | undefined;
+  const enabledEnvironmentIds = () =>
+    registry
+      .get(environmentSummaries.environmentsAtom)
+      .filter((environment) => environment.isEnabled)
+      .map((environment) => environment.environmentId);
 
   const updateBadge = () => {
     const hidden = registry.get(environmentThreadShells.hiddenThreadKeysAtom);
@@ -405,7 +410,7 @@ export function startThreadNotifications(
   };
 
   const syncEnvironments = () => {
-    const environmentIds = registry.get(environmentSummaries.environmentIdsAtom);
+    const environmentIds = enabledEnvironmentIds();
     const activeIds = new Set(environmentIds);
     for (const [environmentId, entry] of watched) {
       if (activeIds.has(environmentId)) continue;
@@ -418,7 +423,7 @@ export function startThreadNotifications(
   };
 
   const pruneRemovedEnvironments = () => {
-    const activeIds = new Set(registry.get(environmentSummaries.environmentIdsAtom));
+    const activeIds = new Set(enabledEnvironmentIds());
     const count = pending.size;
     for (const [tag, entry] of pending) {
       if (activeIds.has(entry.environmentId)) continue;
@@ -466,7 +471,7 @@ export function startThreadNotifications(
   };
   const unsubscribeSettings = subscribeClientSettings(onSettings);
   const unsubscribeEnvironmentIds = registry.subscribe(
-    environmentSummaries.environmentIdsAtom,
+    environmentSummaries.environmentsAtom,
     () => {
       pruneRemovedEnvironments();
       syncEnvironments();

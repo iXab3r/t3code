@@ -44,6 +44,9 @@ vi.mock(import("../state/presentation"), async (original) => {
       get environmentIdsAtom() {
         return environmentIdsAtom as never;
       },
+      get environmentsAtom() {
+        return environmentsAtom as never;
+      },
     },
   };
 });
@@ -86,6 +89,14 @@ import { startThreadNotifications } from "./ThreadNotificationCoordinator";
 let registry: AtomRegistry.AtomRegistry;
 const shellAtom = Atom.family((_id: string) => Atom.make<unknown>(null));
 const environmentIdsAtom = Atom.make<ReadonlyArray<string>>([]);
+const disabledEnvironmentIdsAtom = Atom.make<ReadonlySet<string>>(new Set<string>());
+const environmentsAtom = Atom.make((get) => {
+  const disabled = get(disabledEnvironmentIdsAtom);
+  return get(environmentIdsAtom).map((environmentId) => ({
+    environmentId,
+    isEnabled: !disabled.has(environmentId),
+  }));
+});
 const noRequestsAtom = Atom.make(new Map());
 const hiddenThreadKeysAtom = Atom.make<ReadonlySet<string>>(new Set<string>());
 const noDelegatedAtom = Atom.make<ReadonlySet<string>>(new Set<string>());
@@ -229,6 +240,8 @@ function setup() {
       stack.defer(startThreadNotifications(testRegistry, router));
     },
     setEnvironmentIds: (ids: ReadonlyArray<string>) => testRegistry.set(environmentIdsAtom, ids),
+    setDisabledEnvironmentIds: (ids: ReadonlySet<string>) =>
+      testRegistry.set(disabledEnvironmentIdsAtom, ids),
     hideThreads: (keys: ReadonlySet<string>) => testRegistry.set(hiddenThreadKeysAtom, keys),
     changeSettings: () => {
       for (const listener of state.settingsListeners) listener();
@@ -356,6 +369,10 @@ it("keeps unread completions across focus and acknowledges each thread separatel
   expect(state.badge).toHaveBeenLastCalledWith(2);
   app.hideThreads(new Set());
   expect(state.badge).toHaveBeenLastCalledWith(3);
+  app.setDisabledEnvironmentIds(new Set(["two"]));
+  expect(state.badge).toHaveBeenLastCalledWith(2);
+  app.setDisabledEnvironmentIds(new Set());
+  expect(state.badge).toHaveBeenLastCalledWith(3);
   focused = true;
   window.dispatchEvent(new Event("focus"));
   expect(state.badge).toHaveBeenLastCalledWith(3);
@@ -448,6 +465,17 @@ it.each([null, undefined])(
   async (lastVisitedAt) => {
     await using app = setup();
     state.mode = "off";
+    app.setDisabledEnvironmentIds(new Set(["two"]));
+    state.shells.set(
+      "two",
+      shell({
+        latestTurn: {
+          turnId: "hidden-finished",
+          state: "completed",
+          completedAt: "2026-09-13T07:00:01.000Z",
+        },
+      }),
+    );
     state.shells.set(
       "one",
       shell({
