@@ -13,13 +13,6 @@ Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, and fx providers.
 
 - **Unread completion badges persist.** Background thread completions stay marked
   until you view the corresponding threads, so finishing work is easier to find.
-- **Visible fork identity.** The app header shows `personal edition by Xab3r`
-  with a link to this repository.
-- **A separate release and update feed.** Personal desktop and standalone CLI
-  builds update from this repository's nightly releases.
-- **Matching Windows and Linux builds.** TeamCity packages the Windows x64 installer,
-  Linux x64/ARM64 AppImage and `.deb` packages, and matching CLI archives from the same source revision.
-  The Windows desktop includes the matching Linux x64 WSL runtime.
 
 This list describes shipped differences. Keep it current when a fork feature is
 added, changed, or removed; see the [fork workflow](docs/operations/personal-fork.md).
