@@ -55,6 +55,13 @@ AppImage and open a seeded thread under Xvfb before publishing. Release staging
 requires Windows, Linux x64, and Linux ARM64 manifests to match the source revision
 and release version, with all desktop, update-feed, and CLI assets present.
 
+Publish user-facing patch notes with every release. Set `env.T3_RELEASE_NOTES` on
+the Release build to concise Markdown bullets describing the changes; the release
+script adds the heading and comparison link. Without authored notes it lists new
+non-merge commit subjects since this fork's previous published nightly. Existing
+draft release notes are preserved. The GitHub release body is also what desktop
+clients show in the updater.
+
 `LinuxArm64` consumes the shared bundle from `Prepare` and builds the ARM64 CLI,
 AppImage, and `.deb` in an ARM64 container on Cvat using QEMU. It has a separate
 checkout and architecture-specific Vite+, Cargo, and Rustup volumes. Its bootstrap

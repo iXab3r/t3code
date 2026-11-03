@@ -34,8 +34,19 @@ if [[ "$existing" == false ]]; then
   exit 0
 fi
 if [[ "$existing" != true ]]; then
+  notes_file=$(mktemp)
+  comparison_file=$(mktemp)
+  trap 'rm -f -- "$notes_file" "$comparison_file"' EXIT
+  previous_tag=$(gh api "repos/$repo/releases?per_page=100" \
+    --jq '[.[] | select(.draft == false and (.tag_name | contains("-nightly.")))] | .[0].tag_name // empty')
+  if [[ -n "$previous_tag" ]]; then
+    gh api "repos/$repo/compare/$previous_tag...$revision" > "$comparison_file"
+  else
+    printf '{"commits":[]}\n' > "$comparison_file"
+  fi
+  node scripts/personal-release/release-notes.mjs < "$comparison_file" > "$notes_file"
   gh release create "$tag" --repo "$repo" --target "$revision" --draft --prerelease \
-    --title "T3 Personal $version" --notes "Personal T3 Code build from $revision. Windows x64 installer, Linux x64/ARM64 AppImage and deb packages, and matching CLI runtimes."
+    --title "T3 Personal $version" --notes-file "$notes_file"
 fi
 mapfile -t assets < <(find ci-out/release -maxdepth 1 -type f -print | sort)
 gh release upload "$tag" --repo "$repo" --clobber -- "${assets[@]}"

@@ -141,7 +141,10 @@ object Windows : BuildType({
 object Release : BuildType({
     id("Release")
     name = "Release / validate and publish"
-    params { param("env.T3_PUBLISH", "release") }
+    params {
+        param("env.T3_PUBLISH", "release")
+        text("env.T3_RELEASE_NOTES", "", label = "Release notes", description = "User-facing Markdown changes; empty uses new commit subjects", allowEmpty = true)
+    }
     vcs {
         root(PersonalGit, "+:.\n-:.repos")
         checkoutMode = CheckoutMode.ON_AGENT

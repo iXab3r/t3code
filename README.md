@@ -13,6 +13,8 @@ Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, and fx providers.
 
 - **Unread completion badges persist.** Background thread completions stay marked
   until you view the corresponding threads, so finishing work is easier to find.
+- **Update T3 without updating providers.** The update dialog remembers whether to
+  include provider CLI updates, with the choice beside the confirmation buttons.
 
 This list describes shipped differences. Keep it current when a fork feature is
 added, changed, or removed; see the [fork workflow](docs/operations/personal-fork.md).

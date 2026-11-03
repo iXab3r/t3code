@@ -151,16 +151,6 @@ function UpdateEverythingDialogContent({
       </AlertDialogHeader>
       <ScrollArea scrollFade>
         <div className="flex flex-col gap-3 px-6 pb-4">
-          {providerUpdates ? (
-            <label className="flex items-center gap-2 text-sm">
-              <Checkbox
-                checked={providerUpdates.included}
-                onCheckedChange={providerUpdates.onIncludedChange}
-                disabled={busy}
-              />
-              Include provider updates
-            </label>
-          ) : null}
           {notes.map((note) => (
             <p key={note} className="text-muted-foreground text-sm">
               {note}
@@ -230,25 +220,37 @@ function UpdateEverythingDialogContent({
         </div>
       </ScrollArea>
       <AlertDialogFooter>
-        {disabledReason !== null ? (
-          <p className="self-center text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
-            {disabledReason}
-          </p>
-        ) : running > 0 ? (
-          <p className="self-center text-muted-foreground text-sm max-sm:order-1 max-sm:text-center sm:mr-auto">
-            {stopped === 0
-              ? `${threads} will be interrupted and can resume after the restart.`
-              : continuing === 0
-                ? `${threads} will be interrupted.`
-                : `${threads} will be interrupted. ${continuing} can resume after the restart.`}
-          </p>
-        ) : null}
-        <AlertDialogClose ref={cancelRef} render={<Button variant="outline" disabled={busy} />}>
-          Cancel
-        </AlertDialogClose>
-        <Button disabled={disabledReason !== null || busy} onClick={onConfirm}>
-          {confirmLabel}
-        </Button>
+        <div className="flex w-full flex-col gap-3">
+          {disabledReason !== null ? (
+            <p className="text-sm">{disabledReason}</p>
+          ) : running > 0 ? (
+            <p className="text-muted-foreground text-sm">
+              {stopped === 0
+                ? `${threads} will be interrupted and can resume after the restart.`
+                : continuing === 0
+                  ? `${threads} will be interrupted.`
+                  : `${threads} will be interrupted. ${continuing} can resume after the restart.`}
+            </p>
+          ) : null}
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            {providerUpdates ? (
+              <label className="mr-auto flex items-center gap-2 text-sm">
+                <Checkbox
+                  checked={providerUpdates.included}
+                  onCheckedChange={providerUpdates.onIncludedChange}
+                  disabled={busy}
+                />
+                Include provider updates
+              </label>
+            ) : null}
+            <AlertDialogClose ref={cancelRef} render={<Button variant="outline" disabled={busy} />}>
+              Cancel
+            </AlertDialogClose>
+            <Button disabled={disabledReason !== null || busy} onClick={onConfirm}>
+              {confirmLabel}
+            </Button>
+          </div>
+        </div>
       </AlertDialogFooter>
     </>
   );
