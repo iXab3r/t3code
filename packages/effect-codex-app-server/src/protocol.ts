@@ -476,20 +476,31 @@ export const makeCodexAppServerPatchedProtocol = Effect.fn("makeCodexAppServerPa
             }),
           ),
       }),
+      // A notification handler can die outside the typed error channel. Retire
+      // the session rather than leaving its requests waiting on a dead reader.
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          handleTermination(() =>
+            Effect.succeed(normalizeIncomingError(Cause.squash(cause), "read-input-stream")),
+          ),
+      ),
       Effect.forkScoped,
     );
 
     yield* Stream.fromQueue(outgoing).pipe(
       Stream.run(options.stdio.stdout()),
-      Effect.catch((cause) =>
-        handleTermination(() =>
-          Effect.succeed(
-            new CodexError.CodexAppServerTransportError({
-              operation: "write-output-stream",
-              cause,
-            }),
+      Effect.catchCauseIf(
+        (cause) => !Cause.hasInterruptsOnly(cause),
+        (cause) =>
+          handleTermination(() =>
+            Effect.succeed(
+              new CodexError.CodexAppServerTransportError({
+                operation: "write-output-stream",
+                cause: Cause.squash(cause),
+              }),
+            ),
           ),
-        ),
       ),
       Effect.forkScoped,
     );

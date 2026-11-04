@@ -1,5 +1,7 @@
+import * as Cause from "effect/Cause";
 import * as Deferred from "effect/Deferred";
 import * as Exit from "effect/Exit";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as Path from "effect/Path";
@@ -208,6 +210,78 @@ it.layer(NodeServices.layer)("effect-codex-app-server client", (it) => {
       });
       assert.notInclude(JSON.stringify(warnings), secret);
     }),
+  );
+
+  // Adapter handlers end in Effect.orDie, so a handler failure reaches the reader as a defect.
+  it.effect.each(["typed failure", "defect"] as const)(
+    "a notification handler %s leaves no request waiting on a live but unread app-server",
+    (outcome) =>
+      Effect.gen(function* () {
+        const handle = yield* makeHandle();
+        const client = yield* Layer.build(CodexClient.layerChildProcess(handle)).pipe(
+          Effect.flatMap((context) =>
+            Effect.service(CodexClient.CodexAppServerClient).pipe(Effect.provide(context)),
+          ),
+        );
+        const handlerFailure = new Error("Injected adapter failure");
+        yield* client.handleServerNotification("error", () =>
+          outcome === "defect"
+            ? Effect.fail(handlerFailure).pipe(Effect.orDie)
+            : Effect.fail(
+                new CodexError.CodexAppServerTransportError({
+                  operation: "read-input-stream",
+                  cause: handlerFailure,
+                }),
+              ),
+        );
+        const termination = yield* client.awaitTermination.pipe(Effect.flip, Effect.forkScoped);
+
+        // The peer writes the last notification T3 read before the shared Codex session went
+        // silent, then answers the request while the process keeps running.
+        const result = yield* client.raw
+          .request("mock/notifyThenRespond", {
+            notification: {
+              method: "error",
+              params: {
+                error: {
+                  message: "Fatal error: application network permission was revoked",
+                  codexErrorInfo: "other",
+                  additionalDetails: null,
+                },
+                willRetry: false,
+                threadId: "thread-1",
+                turnId: "turn-1",
+              },
+            },
+          })
+          .pipe(Effect.exit);
+
+        if (outcome === "typed failure") {
+          assert.deepEqual(result, Exit.succeed({ answered: true }));
+          assert.isUndefined(termination.pollUnsafe());
+          assert.isTrue(yield* handle.isRunning);
+          return;
+        }
+        // The process is alive here, so the failure must come from the reader, not process exit.
+        assert.isTrue(Exit.isFailure(result));
+        const failure = Cause.squash((result as Exit.Failure<unknown, unknown>).cause);
+        assert.instanceOf(failure, CodexError.CodexAppServerTransportError);
+        assert.equal(failure.operation, "read-input-stream");
+        assert.strictEqual(failure.cause, handlerFailure);
+        assert.strictEqual(yield* Fiber.join(termination), failure);
+        assert.strictEqual(
+          yield* client.raw.request("thread/read", {}).pipe(
+            Effect.match({
+              onFailure: (error) => error,
+              onSuccess: () => assert.fail("Expected the retired transport to reject requests"),
+            }),
+          ),
+          failure,
+          "later requests must not be queued to a reader that no longer exists",
+        );
+        // Retiring the transport closes the app-server's stdin, so it does not live on unread.
+        assert.equal(yield* handle.exitCode, 0);
+      }),
   );
 });
 
