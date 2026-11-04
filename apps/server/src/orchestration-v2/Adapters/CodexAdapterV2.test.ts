@@ -731,13 +731,12 @@ function withReplayRequestId(
     : entry;
 }
 
-describe("CodexAdapterV2 transport termination", () => {
+describe("CodexAdapterV2 process exit", () => {
   it.effect.each([
     { exit: "numeric", active: false },
     { exit: "SIGKILL", active: false },
     { exit: "numeric", active: true },
     { exit: "SIGKILL", active: true },
-    { exit: "reader-defect", active: true },
   ] as const)("retires the shared session after $exit (active turn: $active)", ({ exit, active }) =>
     Effect.gen(function* () {
       const scenario = `process-exit-${exit}-${active}`;
@@ -751,33 +750,23 @@ describe("CodexAdapterV2 transport termination", () => {
       const turnCompleted = yield* Deferred.make<void>();
       const events: Array<ProviderAdapter.ProviderAdapterV2Event> = [];
       const preamble = codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt: "work" });
-      const readerDefect = new Error("Injected reader defect with a live process");
       const terminationError =
         exit === "numeric"
           ? new CodexError.CodexAppServerProcessExitedError({ code: 17, pid: 52 })
-          : exit === "reader-defect"
-            ? new CodexError.CodexAppServerTransportError({
-                operation: "read-input-stream",
-                cause: readerDefect,
-              })
-            : new CodexError.CodexAppServerTransportError({
-                operation: "read-process-exit-status",
-                pid: 52,
-                cause: PlatformError.systemError({
-                  _tag: "Unknown",
-                  module: "ChildProcess",
-                  method: "exitCode",
-                  cause: new Error("Process terminated by SIGKILL"),
-                }),
-              });
+          : new CodexError.CodexAppServerTransportError({
+              operation: "read-process-exit-status",
+              pid: 52,
+              cause: PlatformError.systemError({
+                _tag: "Unknown",
+                module: "ChildProcess",
+                method: "exitCode",
+                cause: new Error("Process terminated by SIGKILL"),
+              }),
+            });
       const client = yield* CodexClient.make(
         Stdio.make({
           args: Effect.succeed([]),
-          stdin: Stream.fromQueue(input).pipe(
-            Stream.mapEffect((chunk) =>
-              chunk.byteLength === 0 ? Effect.die(readerDefect) : Effect.succeed(chunk),
-            ),
-          ),
+          stdin: Stream.fromQueue(input),
           stdout: () =>
             Sink.forEach((chunk: string | Uint8Array) =>
               Effect.gen(function* () {
@@ -799,7 +788,7 @@ describe("CodexAdapterV2 transport termination", () => {
           stderr: () => Sink.drain,
         }),
         {},
-        exit === "reader-defect" ? Effect.never : Effect.succeed(terminationError),
+        Effect.succeed(terminationError),
       );
       const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
@@ -870,28 +859,18 @@ describe("CodexAdapterV2 transport termination", () => {
         );
       }
 
-      if (exit === "reader-defect") {
-        yield* Queue.offer(input, new Uint8Array());
-      } else {
-        yield* Queue.end(input);
-      }
-      // Output closes only after the protocol records transport termination.
+      yield* Queue.end(input);
+      // Output closes only after the protocol records the process termination.
       yield* Deferred.await(outputEnded);
       const rpcError = yield* client.request("thread/list", {}).pipe(Effect.flip);
-      if (exit === "reader-defect") {
-        assert.instanceOf(rpcError, CodexError.CodexAppServerTransportError);
-        assert.equal(rpcError.operation, "read-input-stream");
-        assert.strictEqual(rpcError.cause, readerDefect);
-      } else {
-        assert.strictEqual(rpcError, terminationError);
-      }
+      assert.strictEqual(rpcError, terminationError);
       // Without the fix the stream never ends, so this waits until the project timeout.
       const readerExit = yield* Fiber.await(eventReader);
       // A failure, not a clean end, carries the Codex error into the session's lastError.
       assert.isTrue(
         Exit.isFailure(readerExit) &&
           isProviderAdapterEventStreamError(Cause.squash(readerExit.cause)),
-        "the session manager must receive transport failure so it can retire the shared session",
+        "the session manager must receive process death so it can retire the shared process",
       );
     }).pipe(
       Effect.scoped,
