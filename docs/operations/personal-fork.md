@@ -55,9 +55,13 @@ AppImage and open a seeded thread under Xvfb before publishing. Release staging
 requires Windows, Linux x64, and Linux ARM64 manifests to match the source revision
 and release version, with all desktop, update-feed, and CLI assets present.
 
-Publish user-facing patch notes with every release. Set `env.T3_RELEASE_NOTES` on
+Publish user-facing patch notes in English with every release. Separate imported
+changes under **Upstream** from new fork changes under **Personal edition**; omit
+either section when it has no changes in that release. Set `env.T3_RELEASE_NOTES` on
 the Release build to concise Markdown bullets describing the changes; the release
-script adds the heading and comparison link. Without authored notes it lists new
+script adds the heading and comparison link. For mixed releases, supply authored
+notes and prefix personal-change bullets with `Personal edition:` so the distinction
+survives updater summaries. Without authored notes it lists new
 non-merge commit subjects since this fork's previous published nightly. Existing
 draft release notes are preserved. The GitHub release body is also what desktop
 clients show in the updater.
