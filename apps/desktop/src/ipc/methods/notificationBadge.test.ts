@@ -94,7 +94,7 @@ it.effect.each(["linux", "darwin", "win32"] as const)(
         Effect.provideService(HostProcess.Platform, platform),
         Effect.provide([
           ElectronApp.layer,
-          DesktopIpc.layer({
+          DesktopIpc.layerTest({
             handle: (channel, handler) => {
               handlers.set(channel, handler);
             },
