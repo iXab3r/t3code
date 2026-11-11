@@ -36,6 +36,29 @@ git merge origin/upstream
 # Resolve conflicts and verify. Push the topic branch; target our main if a PR is requested.
 ```
 
+### Merge hotspots
+
+Fork patches that touch upstream code conflict on most syncs. On each conflict,
+check whether upstream now covers the behavior; if it does, drop our patch instead
+of re-merging it.
+
+- **Unread badges until viewed** (`9207d25fd6`, `39dcb5cfe8`):
+  `apps/web/src/components/ThreadNotificationCoordinator.tsx`, its badge browser
+  test, and `apps/desktop/src/ipc/methods/notificationBadge.ts` with its test.
+  Upstream clears the badge on any window focus and has no "viewed" notion; we keep
+  an unread tag per thread until it is visited and skip disabled environments.
+  Keep upstream's new notification state fields and layer our `unreadTag` on top.
+  Obsolete once upstream tracks unread completions itself. The costliest patch.
+- **Provider CLI choice in app updates** (`e602c954ad`):
+  `apps/web/src/components/sidebar/SidebarUpdatePill.tsx` and
+  `useUpdateEverything.ts`. Upstream always includes provider updates. Combine
+  with upstream's dialog changes rather than picking a side.
+- **Desktop launch check flags**: `scripts/smoke-desktop-app.ts` keeps
+  `--step-timeout-seconds` and `--electron-arg` for ARM64 checks under QEMU;
+  upstream adds its own flags in the same block. Take both.
+- **`knip.jsonc` entries** for `scripts/personal-release/*.mjs` and the fork
+  **README** installation section: keep ours alongside upstream's additions.
+
 ## Builds and updates
 
 [T3 Personal in TeamCity](https://build.eyeauras.net/project/T3Personal) uses
