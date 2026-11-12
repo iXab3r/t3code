@@ -248,6 +248,13 @@ async function buildLinux(version, arch) {
   }
 }
 
+// Agent checkouts persist, so stale hashed chunks would sit beside the extracted bundle.
+async function extractBundle() {
+  for (const dir of ["apps/server/dist", "apps/desktop/dist-electron"])
+    await NodeFSP.rm(NodePath.join(root, dir), { recursive: true, force: true });
+  run(tar, ["-xzf", NodePath.join(input, "prepare", "js-bundle.tar.gz"), "-C", root]);
+}
+
 const phase = process.argv[2];
 if (phase === "check-github") {
   const token = process.env.GITHUB_TOKEN?.trim();
@@ -296,7 +303,7 @@ if (phase === "check-github") {
   await resetOutput();
   install();
   node(["scripts/update-release-package-versions.ts", version]);
-  run(tar, ["-xzf", NodePath.join(input, "prepare", "js-bundle.tar.gz"), "-C", root]);
+  await extractBundle();
   await buildLinux(version, "arm64");
   message("buildNumber", version);
 } else if (phase === "windows") {
@@ -310,7 +317,7 @@ if (phase === "check-github") {
   await resetOutput();
   install();
   node(["scripts/update-release-package-versions.ts", version]);
-  run(tar, ["-xzf", NodePath.join(input, "prepare", "js-bundle.tar.gz"), "-C", root]);
+  await extractBundle();
   const tempParent = NodePath.resolve(NodeOS.tmpdir());
   const temp = await NodeFSP.mkdtemp(NodePath.join(tempParent, "t3-personal-package-"));
   process.env.TEMP = temp;
