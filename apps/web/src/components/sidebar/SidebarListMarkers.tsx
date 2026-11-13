@@ -132,6 +132,13 @@ export function SidebarSectionHeader(props: {
       data-testid={`sidebar-${props.marker}`}
       className={cn("relative mx-0.5 h-8", props.className)}
     >
+      <div
+        aria-hidden
+        className={cn(
+          "pointer-events-none absolute inset-x-0 top-0 h-43 rounded-t-md bg-linear-to-b from-sidebar-foreground/3 via-sidebar-foreground/1 via-30% to-transparent transition-opacity duration-200",
+          !props.toggle.expanded && "opacity-0",
+        )}
+      />
       <CollapsibleSectionHeader
         data-sidebar-row={`shelf:${shelf}`}
         onClick={props.toggle.onToggle}
