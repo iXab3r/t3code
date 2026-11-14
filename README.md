@@ -7,7 +7,8 @@ independent distribution with its own releases and update feed.
 
 T3 Code runs agents on your machine and lets you control them from a desktop,
 web, or mobile client. It works with your subscriptions and authenticated
-Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, and fx providers.
+Codex, Claude Code, Cursor, Grok Build, OpenCode, Antigravity, Kiro, Pi, Muse Code,
+fx, and ACP providers.
 
 ## What this fork changes
 
