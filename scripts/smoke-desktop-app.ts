@@ -74,7 +74,7 @@ try {
     const thread = page.locator("li[data-thread-item]", { hasText: THREAD_TITLE });
     await thread.waitFor({ timeout: stepTimeoutMs });
     step = "opening the thread";
-    await thread.click();
+    await thread.click({ timeout: stepTimeoutMs });
     await page.getByText(THREAD_MESSAGE).waitFor({ timeout: stepTimeoutMs });
   } catch (error) {
     NodeFS.mkdirSync(artifactsDir, { recursive: true });
